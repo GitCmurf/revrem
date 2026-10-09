@@ -60,6 +60,7 @@ class LoopConfig:
     output_last_message: bool = True
     dry_run: bool = False
     final_review: bool = True
+    final_review_remediation_passes: int = 0
     max_remediation_input_chars: int = 200_000
     inner_check_retries: int = 0
     provider_retry_attempts: int = DEFAULT_PROVIDER_RETRY_ATTEMPTS

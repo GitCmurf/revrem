@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==82.0.1"]
+requires = ["setuptools==84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -67,6 +67,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 code_review_loop = [
+  "catalog.toml",
   "expert_profiles/*.toml",
   "prompts/*.txt",
   "prompts/fragments/*.txt",
@@ -195,6 +196,20 @@ source_modules = [
 forbidden_modules = [
   "code_review_loop.cli",
   "code_review_loop.runner",
+]
+
+[[tool.importlinter.contracts]]
+name = "TUI run controller stays UI and engine independent"
+type = "forbidden"
+source_modules = [
+  "code_review_loop.tui_run_controller",
+]
+forbidden_modules = [
+  "code_review_loop.application",
+  "code_review_loop.cli",
+  "code_review_loop.core.engine",
+  "code_review_loop.runner",
+  "textual",
 ]
 
 [[tool.importlinter.contracts]]

@@ -51,6 +51,8 @@ def _config_snapshot(config: LoopConfig) -> ConfigSnapshot:
         commit_on_hook_failure=config.commit_on_hook_failure,
         final_review=config.final_review,
         inner_check_retries=config.inner_check_retries,
+        initial_review_mode=config.initial_review_mode,
+        final_review_remediation_passes=config.final_review_remediation_passes,
     )
 
 
@@ -155,6 +157,8 @@ def _run_session(
 ) -> RunnerResult:
     if config.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
+    if config.final_review_remediation_passes < 0:
+        raise ValueError("--final-review-remediation-passes must be 0 or greater")
 
     setup = prepare_run(
         config,

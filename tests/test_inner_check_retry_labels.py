@@ -8,7 +8,7 @@ These tests guard the contract documented in
 * ``phase_start`` / ``phase_result`` events emitted while an inner-check
   retry is in flight use a schema-compatible dotted ``iteration`` label
   (e.g. ``"1.1"``) so ``events.jsonl`` validates against
-  ``docs/52-api/schemas/events-v1.schema.json``.
+  ``docs/52-api/schemas/events-v1.1.schema.json``.
 
 Regression fingerprint: ``f1:inner-check-retry-label-schema-incompat``.
 """
@@ -24,7 +24,7 @@ from code_review_loop.core.ports import CommandResult, ProcessRunner
 from tests.support import application_runner
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = ROOT / "docs" / "52-api" / "schemas" / "events-v1.schema.json"
+SCHEMA_PATH = ROOT / "docs" / "52-api" / "schemas" / "events-v1.1.schema.json"
 
 
 def _load_events_schema() -> dict[str, object]:
@@ -55,7 +55,7 @@ def test_event_iteration_label_matches_events_v1_schema_pattern() -> None:
         for iteration in range(1, 4):
             label = event_iteration_label(iteration, retry_count)
             envelope = {
-                "schema_version": "1.0",
+                "schema_version": "1.1",
                 "run_id": "run-1",
                 "seq": 1,
                 "ts": "2026-05-12T00:00:00Z",

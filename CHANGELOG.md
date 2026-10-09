@@ -8,6 +8,135 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Added
 
+- Current Codex catalog entries for GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol and
+  GPT-6 Luna, a bounded cross-repository example profile, and opt-in live probes.
+- Isolated wheel promotion with dependency checks, source/wheel manifests,
+  failure recovery, preserved legacy launchers and offline rollback.
+- Installed-package acceptance in CI and promotion: catalog, doctor, deterministic
+  clear/findings loops, report generation and bundled expert-profile loading.
+
+### Fixed
+
+- Update the pinned setuptools build backend to 84.0.0, incorporating dependency
+  PR #51 alongside the newer dependency versions already included in this branch.
+
+- Saved empty route-effort markers remain valid at launch with routing enabled
+  or disabled. Recovery commit subjects skip final-review artifact headings.
+
+- Wizard replay retains restored triage routes and prompts through a private
+  profile snapshot under `.revrem/tmp/wizard`, shared by preview and launch commands.
+
+- Forced cancellation retains current output and reports incomplete cleanup if
+  the process still cannot exit. Recovery commit messages retain final-review
+  findings, and long provider errors retain references from their diagnostic tail.
+- Check presets require actual Ruff/mypy configuration, malformed catalog errors
+  identify their file, and preset hints explain where cloning is available.
+- Invalid effort values are rejected before profile saving, including inactive
+  phases and providers without effort support. Boolean token values are ignored.
+
+- Clearing route fields keeps inherited defaults cleared after saving. Effort
+  cycling uses each saved model's supported choices, and the Checks timeout
+  editor now reads and saves the pipeline timeout.
+- The live monitor tracks the running check and resets results between inner
+  retries; malformed process-output bytes no longer interrupt draining or
+  cancellation.
+- Installed acceptance isolates operator profiles, catalogs and Git settings.
+- CLI help now describes explicit `latest` selection accurately, and providers
+  that ignore reasoning effort no longer receive irrelevant catalog warnings.
+- Optional model telemetry no longer prevents summary output when its event
+  stream is unreadable or has sequence gaps. Summaries discard stale token
+  totals and preserve event-level phase and iteration over payload fields.
+- Wizard startup skips pending-review discovery for settings rejected by the
+  argument parser, allowing the wizard to continue.
+- TUI regression fixtures now own their profiles and fake remediation harnesses,
+  so tests and profile snapshots work without personal configuration or Codex.
+- Updated locked development dependencies to urllib3 2.8.0 and virtualenv
+  21.7.13 to address the outstanding HTTP decompression and environment-creation
+  dependency alerts.
+- Empty-comparison confirmation checks untracked files across the repository
+  when invoked from a subdirectory, using root-relative artifact exclusions.
+- Installed-package acceptance checks remain active under Python optimization.
+- Codex no-changes claims now require Git confirmation of the committed,
+  staged and working trees, with no non-artifact untracked files, before clearing
+  otherwise unknown reviews. Provider output and confirmation evidence are retained.
+- The TUI cancellation test waits for a phase event rather than an events file
+  created before the child's cancellation handler is active.
+
+- Legacy triage now gives explicit string IDs to uniquely identifiable review
+  comments without stable fingerprints, matching the v2 guidance.
+- Local development gates require mypy and import contracts; the editor test
+  uses the running Python interpreter instead of assuming a `python` alias.
+
+- Newly emitted event streams use schema version 1.1 for `model_invocation`,
+  while readers retain support for immutable v1.0 artifacts.
+- Live-run cancellation now gives a child that has emitted its cancellation
+  event one additional bounded grace interval to finish `summary.json` before
+  escalating to `SIGTERM`.
+- The locked development and release toolchain has been refreshed to its latest
+  compatible versions, including mypy 2.3, Ruff 0.16, pytest 9.1, and Twine 7.
+- Pre-commit now uses `pre-commit-hooks` 6.0.0 and a Ruff hook aligned with the
+  locked Ruff 0.16.5 toolchain.
+- Active GitHub workflows now use checkout 7.0.1, setup-python 7.0.0, and
+  upload-artifact 7.0.1; reusable action steps use immutable commit pins.
+- Release and security workflows now use current immutable pins for SBOM,
+  provenance, Sigstore, PyPI publishing, GitHub Releases, Scorecard, and CodeQL.
+- The development lockfile now uses `cryptography` 50.0.1, closing
+  CVE-2026-69247 in the transitive `twine`/`keyring` toolchain.
+- Remediation providers are now explicitly forbidden from staging or committing;
+  RevRem detects unexpected `HEAD` changes, preserves full-auto mode in resume
+  commands, and retains an omission marker when mandatory prompt instructions
+  leave only a small review-context budget.
+- TUI follow-up profile saves now preserve map-entry deletions from the effective
+  live-run settings, including route rows and harness-executable overrides.
+- The TUI now restores the newest repository run from structured resume data,
+  keeps the active profile and launch command consistent, shows effective
+  timeout values, and preselects an actionable Git-compatible final review.
+  Startup mounts before discovery, avoids duplicate catalog/profile parsing,
+  and retains visible loading feedback until the workbench is ready.
+- Clearing an inherited route reasoning effort now preserves the explicit
+  empty-string profile marker while still rejecting unknown non-empty efforts.
+- Codex and catalog-backed harness flows now preserve actionable provider-failure
+  signals for post-assistant JSON error events, resolve relative model telemetry
+  summaries against each run record's working directory, and validate catalog
+  `[[harness]]` / `[[model]]` records for required identifying fields before
+  indexing.
+- Model telemetry now resolves remediation and stale-validation phases to the
+  configured `remediation`/`review` model and effort fields, and model
+  validation now skips disabled triage/remediation-routing/commit post-review
+  phases at startup.
+- Catalog aliases now resolve to their declared driver for model validation and
+  remediation/triage protocol selection, malformed scalar Codex cache reasoning
+  metadata is ignored in favor of packaged model metadata, and `revrem models`
+  now exits cleanly with an actionable error when catalog files are invalid.
+
+### Added
+
+- Optional bounded final-review recovery can route final-audit findings through
+  triage, remediation, verification, and commit before running a fresh final
+  review. CLI and TUI settings expose a separate recovery-pass limit; the
+  default remains zero, while the project dogfood profile enables one pass.
+- The experimental TUI now opens on an editable Loop screen backed by real
+  Textual widgets. Operators can adjust phase harness/model/effort/timeout and
+  loop metadata in an in-memory working copy, see a dirty `*`, save through the
+  shared profile writer, and launch via the same `revrem --profile NAME` path.
+  SVG snapshot tests lock representative LoopDiagram states for showcase-facing
+  regressions.
+- The experimental TUI Run workspace now renders live runs as the same loop
+  diagram shape used for editing, with event-derived phase status glyphs,
+  iteration and inner-retry counters, event/log toggling, artifact-directory
+  feedback, graceful degraded states for missing or unreadable `events.jsonl`,
+  and SVG snapshots for representative live-run states.
+- The experimental TUI now has a grouped Profiles picker, a Prompts library,
+  scalar prompt-field editing/apply flows, and editable triage route rows that
+  all route through the Loop working copy and explicit profile Save.
+- `revrem ui --skip-splash` starts directly in the Loop workspace; without it,
+  the experimental TUI shows a brief terminal-native retro splash while Textual
+  mounts. The Loop workspace can seed its unsaved working copy from the last
+  replayable profile-based run command, renders numbered segmented phase bands
+  with explicit loop return labels, shows long origin details in a labeled
+  commands panel instead of the top bar, and keeps current-phase actions
+  visible below the diagram.
+- `revrem config set <profile> <key> <value>` — non-interactive single-field profile edits (foundation for the loop-first TUI, REVREM-DESIGN-001 / PLAN-009).
 - Manual no-provider GitHub Action smoke workflow
   (`.github/workflows/revrem-action-smoke.yml`) that exercises the local
   composite action with the gated fake harness and asserts generated
@@ -19,6 +148,126 @@ This project follows Semantic Versioning once public releases begin.
   inside the run directory, matching production summaries while still rejecting
   out-of-scope paths. Empty diagnostic artifact values now render as blank
   cells instead of `.` in phase-failure tables.
+- Experimental `revrem ui` live runs: the Textual TUI can now confirm-start a
+  real run, read the same `events.jsonl` rows used by replay into the Run
+  Monitor, and cancel the child process without blocking the UI. The controller
+  runs the normal `revrem` entry point as a managed subprocess with `--no-tty`,
+  `--pending-review ignore`, and JSON summaries; reused explicit artifact
+  directories ignore stale `events.jsonl` and `summary.json` files until the
+  child replaces them. Tests prove CLI/TUI artifact equivalence across clear,
+  findings, unknown, review-failure, setup-failure, check-failure, and
+  budget-ceiling fake-harness scenarios; Pilot tests now drive confirmed
+  launch, visible monitor updates, and cancellation through the real Textual
+  widget tree.
+- The experimental TUI now uses a denser operator-console layout instead of
+  plain tabbed text snapshots: a persistent status bar, profile/pipeline and
+  run-monitor columns, contextual live-run controls, and an on-demand help panel
+  make run state and keybindings visible without changing the execution path.
+  Quitting during a live run now requires confirmation and cancels the managed
+  child before the app exits. `Esc` clears input focus so single-key operator
+  actions are available again after editing profile/path fields.
+- The experimental TUI now presents a command-bar/workbench/footer layout with
+  four explicit workspaces: profiles, loop, prompts, and run. The middle of the
+  screen is always a focused navigation pane plus detail pane, `Tab` switches
+  pane focus, `j`/Down and Up move selections, and the footer shows only the
+  keys that apply to the current workspace.
+
+### Fixed
+
+- Explicit `--initial-review-file latest` now uses the newest usable unresolved
+  review artifact without treating a post-run cleanup commit as stale pending
+  review discovery. Compatibility filtering remains available with
+  `--initial-review-mode compatible`, and explicit `latest` fails clearly when
+  no usable review artifact exists.
+
+- The CLI wizard now performs pending-review discovery before its run-shape
+  editing menus. Accepted compatible/stale feedback is serialized as
+  `--initial-review-file` plus `--initial-review-mode`, and fresh starts add
+  `--pending-review ignore` to avoid a second prompt after the wizard exits.
+- Auto-commit message drafting now includes context from earlier uncommitted
+  iterations when checks previously failed and skipped commits, so the drafted
+  subject can describe the whole staged change.
+- The experimental TUI Loop workspace now keeps expansion attached to the
+  selected phase, hides triage route details until triage is explicitly
+  expanded, and gives `Tab` contextual behavior instead of toggling hidden
+  left/right pane state.
+- Live-run `events.jsonl` now flushes every progress event, so cancellation
+  cannot leave a replay-breaking sequence gap by flushing the terminal
+  cancellation event while an earlier phase-start row is still buffered.
+- The route-edit modal SVG snapshot now ignores nondeterministic Textual theme
+  color drift while still comparing layout and text, avoiding stale-validation
+  dogfood failures caused by focused vs. unfocused widget palette races.
+- Direct remediation retries now keep review findings before failed-check
+  context and cap oversized check logs before inserting them into prompts, so
+  snapshot/SVG diffs cannot bury the actionable task. Dry-run v2 triage no
+  longer fails under `triage.on_invalid = "stop"`, staged TUI routing header
+  edits render before Save, and provider timeouts with no assistant output now
+  say so explicitly.
+- The experimental TUI now keeps prompt inventory view-models free of prompt
+  resolution I/O, rejects applying triage contract prompt assets to commit
+  message prompts, and validates route row edits before mutating the Loop
+  working copy.
+- The experimental TUI route editor now offers a reliable `Ctrl+S` keyboard
+  save path from Select-backed fields, and the live-run nested-child
+  cancellation regression test tolerates slow CI scheduling while still
+  cleaning up launched children on failure.
+- The experimental TUI now warns when a bundled preset is loaded into the Loop
+  editor as read-only, renders newly added triage routes immediately before
+  Save, edits route rows through constrained Select controls for enumerated
+  fields, and keeps Run footer/help dry-run hints consistent.
+- Live TUI status now requires a fresh summary with `final_status = "clear"` before
+  reporting exit code `0` as `completed-clear`, and malformed reasoning-effort
+  values in profiles/CLI args are rejected against the global effort vocabulary
+  before model-specific validation.
+- Provider subprocess failures now classify local network/DNS outages as
+  `provider_network_unavailable` instead of the less actionable generic
+  `provider_transient_error`, and suggested continuation commands now start
+  with `revrem` instead of a source-checkout-specific `./.venv/bin/revrem`
+  path.
+- TUI working-copy route saves now materialize inherited routing/default-route
+  and fallback context before writing, so route-cell edits remain loadable and
+  match the `revrem config set` route materialization path.
+- Route clear actions in the Loop route editor now persist as field removals
+  (instead of empty strings), and loop refresh/reload paths now keep the
+  in-session profile model when on-disk profile config is invalid.
+- The experimental TUI Run workspace now keeps rendering the profile that
+  launched the live run even if the operator browses or selects a different
+  profile while the run is still visible.
+- The experimental Loop TUI now keeps the advertised `i` key workspace-dispatched
+  instead of shadowing max-iteration editing with profile import, reports
+  built-in profiles as clone-to-edit on Save/save-and-run, reloads the loop
+  diagram when another profile is selected without discarding dirty edits, and
+  renders the loop through real row/gutter/card widgets with `●`/`○` state
+  glyphs and box-drawing return rails.
+- Codex review status detection now treats the clear-prose form "No actionable
+  correctness, safety, or maintainability defects were found" as clear while
+  still refusing contrastive prose that reports a later defect.
+- Codex review status detection now also accepts the narrower clear-prose form
+  "No actionable correctness issues were found", including when a read-only
+  sandbox prevented an otherwise optional build, while still rejecting later
+  contrastive security or maintainability findings.
+- Codex review status detection now recognizes "I did not identify any
+  discrete, actionable correctness issues" plus negated "did not reveal
+  blocking defects" caveats as clear, while preserving fail-closed behavior for
+  contrastive bug prose.
+- v2 triage runs now record `revrem.triage.unstructured_output` when a triage
+  model returns prose instead of the required JSON payload. With
+  `triage.on_invalid = "continue"` RevRem still falls back to direct
+  remediation, but routing is explicitly reported as skipped; with
+  `triage.on_invalid = "stop"` the run fails before remediation.
+- Profile `triage.prompt` text is now appended to the selected structured
+  triage contract instead of replacing it, so bundled expert profiles keep the
+  v2 JSON schema instructions required for routing.
+- Routed remediation now inherits the remediation phase timeout when a route
+  omits `timeout_seconds`, so `--remediation-timeout-seconds` applies to routed
+  runs instead of falling back to the shared default timeout.
+- Stale initial-review validation now runs before triage, routing, or
+  remediation. If the old finding is already resolved, RevRem records only the
+  validation/check artifacts and exits `stale_review_already_resolved` without
+  misleading routing or remediation artifacts.
+- Saved summaries now include a compact `command` string when a sanitized
+  command line is available, matching the existing `command_line` and
+  `invocation.json` metadata.
 
 ## [0.5.0] - 2026-06-21
 

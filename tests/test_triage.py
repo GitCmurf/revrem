@@ -221,3 +221,20 @@ def test_parse_triage_payload_normalizes_null_needs_more_info_fingerprint():
     assert payload["parsing_warnings"][-1] == (
         "Normalized needs_more_info missing fingerprint to review-comment:1 fallback."
     )
+
+
+def test_v1_unfingerprinted_review_can_keep_a_string_comment_id():
+    prompt = triage.load_prompt("v1")
+    assert "review-comment:<1-based-order>" in prompt
+    assert "Never use null" in prompt
+    fixture = json.loads(_fixture("valid"))
+    fixture["confirmed_findings"][0]["fingerprint"] = "review-comment:1"
+    fixture["implementation_order"] = ["review-comment:1"]
+    fixture["parsing_warnings"] = ["Review supplied no stable f1 ID; used comment order."]
+    parsed = triage.parse_triage_payload(
+        json.dumps(fixture), run_id="run-123", source_review_artifact="review-1.txt")
+    assert parsed["confirmed_findings"][0]["fingerprint"] == "review-comment:1"
+    fixture["confirmed_findings"][0]["fingerprint"] = None
+    with pytest.raises(triage.TriageValidationError):
+        triage.parse_triage_payload(
+            json.dumps(fixture), run_id="run-123", source_review_artifact="review-1.txt")

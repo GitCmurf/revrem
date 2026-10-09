@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from decimal import Decimal
 from pathlib import Path
 from typing import TypeVar
@@ -237,6 +237,9 @@ def resume_loop_config(
         triage_reasoning_effort=_resume_optional_str(resume_config, "triage_reasoning_effort"),
         triage_enabled=_resume_bool(resume_config, "triage_enabled", False),
         final_review=_resume_bool(resume_config, "final_review", True),
+        final_review_remediation_passes=_resume_int(
+            resume_config, "final_review_remediation_passes", 0
+        ),
         timeout_seconds=_resume_optional_float(resume_config, "timeout_seconds"),
         review_timeout_seconds=_resume_optional_float(resume_config, "review_timeout_seconds"),
         remediation_timeout_seconds=_resume_optional_float(
@@ -341,6 +344,7 @@ def resume_config_payload(config: LoopConfig) -> dict[str, object]:
         "triage_model": config.triage_model,
         "triage_enabled": config.triage_enabled,
         "final_review": config.final_review,
+        "final_review_remediation_passes": config.final_review_remediation_passes,
         "check_commands": list(config.check_commands),
         "timeout_seconds": config.timeout_seconds_display,
         "review_timeout_seconds": config.review_timeout_seconds_display,
@@ -456,6 +460,20 @@ def _resume_profile_v2(
         triage=profiles.parse_triage(triage_payload, "resume_config.profile_v2.triage"),
         source="summary.json",
     )
+
+
+def rehydrate_profile_triage(
+    profile: profiles.Profile, resume_config: dict[object, object]
+) -> profiles.Profile:
+    """Overlay the persisted effective triage snapshot onto a current profile.
+
+    Run recovery must retain route tables and prompt settings that were effective
+    when the run began, even if the profile on disk has changed since then.
+    Other profile sections remain current until an explicit recovery override
+    changes them.
+    """
+    snapshot = _resume_profile_v2(resume_config, profile.name)
+    return profile if snapshot is None else replace(profile, triage=snapshot.triage)
 
 
 def latest_resume_review_path(summary: dict[str, object], *, run_dir: Path) -> Path | None:

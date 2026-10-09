@@ -40,11 +40,16 @@ def build_triage_command(config: LoopConfig) -> list[str]:
             harness=config.triage_harness,
             role="triage",
             executable=phase_support._resolve_executable(config.triage_harness, config),
+            cwd=config.cwd,
             model=config.triage_model,
             reasoning_effort=config.triage_reasoning_effort,
             sandbox="read-only",
             color=config.exec_color,
             full_auto=False,
+            json_output=(
+                harnesses._resolve_catalog_driver(config.triage_harness, cwd=config.cwd)
+                == "codex"
+            ),
         )
     )
 
@@ -59,7 +64,7 @@ def run_triage(
     ctx: RunContext,
 ) -> tuple[str, int, bool, dict[str, Any] | None]:
     command = build_triage_command(config)
-    prompt_root = config.triage_prompt or triage.load_prompt(contract=config.triage_contract)
+    prompt_root = _triage_prompt_root(config)
     prompt_root = _with_route_table(prompt_root, config)
     prompt = f"{prompt_root}\n{prompts_composer.trim_for_prompt(review_output, config.max_remediation_input_chars)}"
     prompt_artifact_path = config.artifact_dir / f"triage-{iteration}-prompt.txt"
@@ -69,6 +74,7 @@ def run_triage(
         command,
         prompt,
         prompt_artifact_path=prompt_artifact_path,
+        cwd=config.cwd,
     )
     command = invocation.command
     prompt_input = invocation.stdin
@@ -90,6 +96,7 @@ def run_triage(
             source=config.phase_config_sources.get("triage", "direct-config"),
             prompt_chars=prompt_metadata.get("prompt_chars"),
             prompt_delivery=prompt_metadata["prompt_delivery"],
+            cwd=config.cwd,
         ),
         ctx=ctx,
         metadata={
@@ -112,6 +119,9 @@ def run_triage(
             label=str(iteration),
             ctx=ctx,
             prompt_artifact=invocation.prompt_artifact,
+            harness=config.triage_harness,
+            model=config.triage_model or config.model,
+            reasoning_effort=config.triage_reasoning_effort or config.reasoning_effort,
         )
     triage_artifact = config.artifact_dir / f"triage-{iteration}.txt"
     phase_support.write_artifact(triage_artifact, phase_support._combined_output(result))
@@ -139,6 +149,8 @@ def run_triage(
             f"codex exec triage failed for iteration {iteration}; see {triage_artifact}"
         )
     phase_support.progress_event(config, "triage", str(iteration), "done", ctx=ctx)
+    if config.dry_run:
+        return review_output, 0, False, None
     triage_output = actionable_review_output(phase_support._combined_output(result))
     if triage.looks_structured_output(triage_output):
         try:
@@ -202,6 +214,30 @@ def run_triage(
             False,
             payload,
         )
+    if config.triage_contract == "v2":
+        issue = triage.unstructured_triage_issue(
+            iteration=iteration,
+            artifact=str(triage_artifact),
+            contract=config.triage_contract,
+        )
+        artifacts.write_json_artifact(
+            config.artifact_dir,
+            f"diagnostics-{iteration}.json",
+            diagnostics.doctor_payload([issue]),
+        )
+        phase_support.progress_event(
+            config,
+            "triage",
+            str(iteration),
+            "invalid",
+            "unstructured output; routing skipped",
+            ctx=ctx,
+        )
+        if config.triage_on_invalid == "stop":
+            raise RuntimeError(
+                f"unstructured triage output for iteration {iteration}; see {triage_artifact}"
+            )
+
     return (
         (
             "Triage handoff from the previous review:\n"
@@ -237,6 +273,17 @@ class TriageAdapter:
             is_clear=is_clear,
             payload=payload,
         )
+
+
+def _triage_prompt_root(config: LoopConfig) -> str:
+    prompt_root = triage.load_prompt(contract=config.triage_contract)
+    if not config.triage_prompt:
+        return prompt_root
+    return (
+        f"{prompt_root}\n\n"
+        "Additional profile triage guidance:\n"
+        f"{config.triage_prompt}"
+    )
 
 
 def _with_route_table(prompt_root: str, config: LoopConfig) -> str:

@@ -44,7 +44,7 @@ JSON summary: .revrem/runs/20260509T120823Z/summary.json
 
 ## Why revrem
 
-- **Entirely local.** No hosted service, no telemetry — RevRem runs on your
+- **Entirely local.** No hosted service or remote telemetry — RevRem runs on your
   machine against your checkout.
 - **Bounded and watched.** Iterations are capped by default, and the run exits
   with a clear pass/fail status code you can gate CI or hooks on.
@@ -139,6 +139,9 @@ RevRem is intentionally local, watched, and bounded:
   schema-validated actions and route them to the right harness/model.
 - **Auto-commit** (optional) commits each verified remediation pass after your
   checks pass.
+- **Bounded final-review recovery** (optional) can remediate findings discovered
+  only by the final audit, then re-run that audit without reopening the ordinary
+  iteration limit.
 - **Bug-report bundles** package a failed run into a redacted, shareable archive.
 - **Static HTML reports** render a finished run into a single, self-contained,
   redacted-by-default HTML file (or a machine-readable JSON index) — no model
@@ -164,8 +167,65 @@ Profiles keep long commands repeatable:
 ```bash
 revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr
+revrem config set final-pr pipeline.max_iterations 11
+revrem config set final-pr pipeline.final_review_remediation_passes 1
+revrem config set final-pr runtime.provider_retry_attempts 5
+revrem config set final-pr triage.contract v2
+revrem config set final-pr triage.enabled true
+revrem config set final-pr triage.routes.codex-midi.model gpt-5.4-mini
+revrem config set final-pr triage.routing.default_route codex-midi
+revrem config set final-pr triage.routing.enabled true
+revrem config set final-pr review.timeout_seconds 0.5
+revrem config set final-pr triage.timeout_seconds 0
+revrem config set final-pr output.no_tty true
+revrem config set final-pr runtime.full_auto off
+revrem config set final-pr description ""
+revrem config set final-pr runtime.full_auto off --format json
 revrem --profile final-pr
 ```
+
+`revrem config set <profile> <key> <value> --format json` is machine-readable; automation should parse the
+JSON object with `status`, `command`, `name`, `key`, `value`, and `path`.
+The global form `revrem config --format json set ...` is also supported.
+
+Boolean profile fields are written as TOML booleans. `config set` accepts
+`true/false`, `1/0`, `yes/no`, and `on/off` for those fields.
+`config set` rewrites only the requested dotted field path for one profile.
+If a requested key conflicts with a value inherited from defaults or overlays,
+`config set` keeps the explicit value already in the owning profile and rewrites
+only the requested field.
+Omitted fields stay as-is and continue inheriting from any applicable
+resolved profile chain (`user defaults`, `project defaults`, and named profile
+overlays) instead of being materialized during the save. In particular,
+changing `triage.routing.default_route` only rewrites that leaf and preserves
+inherited values including top-level `description` unless you explicitly set
+`description` for that profile. To clear an inherited description, set it to
+an empty string:
+
+```
+revrem config set final-pr description ""
+```
+For routing edits, explicitly-owned routing keys in the profile are preserved even when
+project defaults differ (for example, `strict_on_unavailable_route` or
+`allow_model_escalation`), so setting `triage.routing.default_route` does not
+accidentally overwrite that explicit sibling state.
+inherited routing siblings (`enabled`, `mode`, `rule`, `strict_on_unavailable_route`,
+`allow_model_escalation`) and inherited route tables unless you explicitly set
+them too. Route-table edits validate against the inherited context and materialize
+the edited route row in the owning profile; if needed, the inherited default route
+row is also written so the profile can be reloaded independently.
+This route validation uses the same merged view, so defaults-based route tables
+are included when checking whether `default_route` is known.
+`config set` validates using the full effective chain (user defaults + project
+defaults + profile), including inherited route tables and inherited triage
+contract/routing state. If you edit routing, the target route must exist in that
+merged context, otherwise the edit is rejected.
+`triage.routes.<name>.*` edits are validated against inherited route context and
+persisted with inherited route values (plus the default route row when needed) so
+the owning profile remains loadable when read alone.
+This includes the common inherited-routing scenario where `triage.contract = "v2"` and
+`triage.routing.enabled = true` are supplied only by defaults. In that case, non-interactive `config set`
+writes the requested leaf and validates against inherited routing context before saving.
 
 In an interactive terminal, bare `revrem` (or `revrem --wizard`) opens a guided
 setup. It offers your last compatible settings or the recommended defaults,
@@ -181,6 +241,9 @@ revrem --base main --max-iterations 2 --check "git diff --check" --save-profile 
 
 For triage, routing, multi-harness setups, and the full wizard reference, see
 the [operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md#interactive-wizard).
+Profile `triage.prompt` text is additive guidance: RevRem still prepends the
+selected structured triage contract, then adds the profile guidance and any
+configured route table before the review text.
 
 Bundled expert profiles are available immediately:
 
@@ -190,6 +253,41 @@ revrem config clone security security-local
 ```
 
 Copyable stack profiles live under [`examples/`](https://github.com/GitCmurf/revrem/tree/main/examples).
+The [current Codex example](examples/current-codex/README.md) combines Astra
+review, Luna triage and Sol 6.1 remediation with explicit time limits.
+
+## Model Catalog and Local Statistics
+
+Model capabilities are configuration data. Inspect the effective catalog and
+locally recorded timings with:
+
+```bash
+revrem models list
+revrem models list --harness codex --format json
+revrem stats models
+revrem stats models --phase review --model gpt-5.6-sol
+```
+
+Catalog precedence is packaged defaults, Codex's local
+`$CODEX_HOME/models_cache.json`, `~/.config/revrem/catalog.toml`, then project
+`.revrem-catalog.toml`.
+Catalog entries in `.config/revrem/catalog.toml` and `.revrem-catalog.toml` can
+select one of the audited built-in drivers (`codex`, `claude`, `gemini`,
+`opencode`, or `kilo`) for a harness alias. `reserved` is intentionally not
+supported as a catalog driver. Executable paths remain an explicit runtime
+choice through `--harness-bin HARNESS=EXECUTABLE`.
+Malformed Codex cache entries are ignored, and catalog `efforts` declarations
+must be lists or tuples. Aliases inherit their selected driver's validation.
+The bundled catalog includes `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`,
+and `gpt-6-luna`, even before Codex creates a local model cache. Codex supports
+`low` through `ultra` for Astra and Sol, and `low` through `max` for Luna.
+`gpt-6.1-luna` is not a documented model ID. Catalog presence describes supported
+configuration; your Codex account must still have access.
+
+Known-invalid model/effort combinations are rejected;
+unknown future values pass through with a warning. GPT-5.6 Sol and Terra support
+`low`, `medium`, `high`, `xhigh`, `max`, and `ultra`; Luna supports the same
+set except `ultra`.
 
 ## Safety Model
 
@@ -202,7 +300,8 @@ safety posture is built around local operator control:
   after configured checks pass;
 - machine-readable output is opt-in (`--summary-format json`);
 - local run history can be disabled with `--no-run-history`;
-- no hosted service or telemetry is part of RevRem itself.
+- no hosted service or remote telemetry is part of RevRem itself; local run artifacts
+  record model identity, effort, duration, outcome, and token usage when reported.
 
 Use `--commit-after-remediation` only when each verified remediation pass should
 become a git commit. Commit-hook failure handling, `--no-redact` bundle risks,
@@ -229,8 +328,34 @@ pipx install --force "revrem[tui]"
 revrem ui --profile final-pr
 ```
 
-The TUI renders Home, Profiles, Pipeline, Run Monitor, and Controls views, and
-shells through the same CLI command plans as normal terminal usage.
+The TUI opens with a brief terminal-native splash screen; pass
+`revrem ui --skip-splash` to replace branding with immediate loading feedback.
+The TUI renders
+Loop, Run, Profiles, and Prompts workspaces, and shells through the same CLI
+command plans as normal terminal usage. The Loop view starts with a labelled
+Next Run summary and editable Run Settings card that make the profile, outer
+iteration bound, review source, command preview, and prior-run provenance explicit. `Review input` always says
+whether an initial-review file will be passed. Compatible feedback is selected
+for reuse; older feedback is visible but requires an explicit stale-validation
+choice. The phase diagram follows with numbered phase bands and explicit
+retry/return bands. Startup discovery is installed atomically, so only the
+active workspace appears when loading finishes.
+Checks always runs the built-in worktree-cleanliness check. Focus Checks and
+press `p` to choose repository-detected recommendations, recent repo-local
+command sets, custom commands, or built-in cleanliness only. Press `?` or `h`
+for contextual modal help.
+Use `Left` and `Right` to cycle between workspaces; `1`–`4` remain direct
+shortcuts. Header tabs use semantic active styling, while square brackets are
+reserved for footer keycaps.
+`r` and `d` execute the in-memory Loop working copy without saving it; `s` is
+the only persistence action. Live runs retain the exact effective profile as a
+generated profile-snapshot artifact, so bundled read-only profiles remain runnable.
+During a live run, the run monitor refreshes continuously and streams stdout/stderr
+into the dedicated tabs while output is still in flight.
+Profile edits done in-session are visible to subsequent live runs without restarting
+the TUI. If a profile edit leaves invalid TOML or schema on disk, the TUI keeps
+the current session profile in use and reports a non-fatal warning instead of
+crashing.
 
 ## Status
 
@@ -270,7 +395,7 @@ pre-commit run --all-files
 
 Ruff, mypy, pytest, DocOps checks, and `git diff --check` are required local and
 CI gates. For a stable `revrem` command usable from other repositories, promote
-a snapshot with `./scripts/promote-stable` — see the
+an isolated installed snapshot with `./scripts/promote-stable --extras tui` — see the
 [operator guide](https://github.com/GitCmurf/revrem/blob/main/docs/70-devex/devex-001-using-code-review-loop.md#promote-a-stable-local-version).
 
 See [CONTRIBUTING.md](https://github.com/GitCmurf/revrem/blob/main/CONTRIBUTING.md) for contribution expectations, governed

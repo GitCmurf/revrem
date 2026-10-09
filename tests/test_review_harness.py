@@ -150,3 +150,85 @@ class TestEngineDispatch:
             ["--base", "missing", "--codex-bin", "git", "--artifact-dir", "artifacts"]
         )
         assert exit_code == 4  # preflight blocked; adapter was never called
+
+
+@pytest.mark.parametrize("change", ["none", "working", "staged", "committed", "untracked", "missing-base"])
+def test_no_changes_claim_requires_git_proof(tmp_path, change):
+    import json
+    import subprocess
+    from dataclasses import replace
+
+    from code_review_loop.adapters import review
+    from code_review_loop.clock import SYSTEM_CLOCK
+    from tests.support.git_fixtures import init_repo
+
+    repo = init_repo(tmp_path / "repo")
+    if change in {"working", "staged", "committed"}:
+        (repo / "README.md").write_text("changed\n")
+    if change in {"staged", "committed"}:
+        subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+    if change == "staged":
+        # A worktree identical to base must not hide a differing index.
+        (repo / "README.md").write_text("# Fixture\n")
+    if change == "committed":
+        subprocess.run(["git", "switch", "-c", "feature"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "change"], cwd=repo, check=True, capture_output=True)
+    if change == "untracked":
+        (repo / "new.py").write_text("raise RuntimeError()\n")
+    artifact_dir = repo / ".revrem/runs/test"
+    artifact_dir.mkdir(parents=True)
+    config = LoopConfig(cwd=repo, artifact_dir=artifact_dir, progress=False,
+                        base="missing" if change == "missing-base" else "main")
+    claim = "There are no changes relative to the specified merge base. The working tree is clean."
+    def runner(*a, **k):
+        return CommandResult(["codex"], 0, stdout=claim)
+
+    ctx = replace(_ctx(runner=runner), clock=SYSTEM_CLOCK)
+    if change == "missing-base":
+        with pytest.raises(RuntimeError):
+            review.run_codex_review(config, runner, "review-final", ctx=ctx)
+        return
+    status, result = review.run_codex_review(config, runner, "review-final", ctx=ctx)
+    assert status == ("clear" if change == "none" else "unknown")
+    assert result.stdout == claim  # Preserve the provider output, not a synthetic clear marker.
+    evidence = artifact_dir / "diagnostics-review-final-empty-comparison.json"
+    assert evidence.exists() == (change == "none")
+    if evidence.exists():
+        assert json.loads(evidence.read_text())["status_source"] == "git_empty_comparison"
+
+
+@pytest.mark.parametrize("text", [
+    "The reviewer could not complete the review.",
+    "There are no changes, but a security issue remains.",
+])
+def test_empty_git_tree_does_not_clear_unrelated_or_conflicting_prose(tmp_path, text):
+    from code_review_loop.adapters.review import confirm_empty_comparison
+    from tests.support.git_fixtures import init_repo
+
+    repo = init_repo(tmp_path / "repo")
+    config = LoopConfig(cwd=repo, artifact_dir=repo / ".revrem")
+    assert confirm_empty_comparison(config, text) is None
+
+
+def test_empty_comparison_git_failure_stays_unknown(tmp_path, monkeypatch):
+    from code_review_loop.adapters import review
+
+    monkeypatch.setattr(review, "run_git_preflight", lambda *a: CommandResult(["git"], 128))
+    assert review.confirm_empty_comparison(
+        LoopConfig(cwd=tmp_path), "There are no changes to review.") is None
+
+
+@pytest.mark.parametrize("untracked", ["outside.py", "nested/.revrem/code.py", ".revrem/runs/log.txt"])
+def test_empty_comparison_from_subdirectory_checks_repo_wide_untracked_files(tmp_path, untracked):
+    from code_review_loop.adapters.review import confirm_empty_comparison
+    from tests.support.git_fixtures import init_repo
+
+    repo = init_repo(tmp_path / "repo")
+    cwd = repo / "nested"
+    cwd.mkdir()
+    path = repo / untracked
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("untracked content\n", encoding="utf-8")
+    config = LoopConfig(cwd=cwd, base="main", artifact_dir=repo / ".revrem/runs")
+    result = confirm_empty_comparison(config, "There are no changes to review.")
+    assert (result is not None) == untracked.startswith(".revrem/")

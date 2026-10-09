@@ -19,8 +19,26 @@
     },
     "phase": "review",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "seq": 1,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1",
+    "kind": "model_invocation",
+    "payload": {
+      "duration_seconds": 0.0,
+      "harness": "codex",
+      "model": null,
+      "outcome": "ok",
+      "reasoning_effort": null,
+      "returncode": 0,
+      "tokens": null
+    },
+    "phase": "review",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.1",
+    "seq": 2,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -31,8 +49,8 @@
     },
     "phase": "review",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 2,
+    "schema_version": "1.1",
+    "seq": 3,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -42,9 +60,7 @@
       "command": [
         "codex",
         "exec",
-        "--full-auto",
-        "--sandbox",
-        "workspace-write",
+        "--approve-for-me",
         "--color",
         "never",
         "--output-last-message",
@@ -52,17 +68,35 @@
         "-"
       ],
       "harness": "codex",
-      "message": "codex exec · sandbox workspace-write · prompt=1.0k stdin · source=direct-config",
+      "message": "codex exec · sandbox workspace-write · prompt=1.1k stdin · source=direct-config",
       "payload_schema_version": "1.1",
-      "prompt_bytes": 1035,
-      "prompt_chars": 1035,
+      "prompt_bytes": 1150,
+      "prompt_chars": 1150,
       "prompt_delivery": "stdin",
       "summary": "start"
     },
     "phase": "remediate",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 3,
+    "schema_version": "1.1",
+    "seq": 4,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1",
+    "kind": "model_invocation",
+    "payload": {
+      "duration_seconds": 0.0,
+      "harness": "codex",
+      "model": null,
+      "outcome": "ok",
+      "reasoning_effort": null,
+      "returncode": 0,
+      "tokens": null
+    },
+    "phase": "remediate",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.1",
+    "seq": 5,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -73,8 +107,8 @@
     },
     "phase": "remediate",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 4,
+    "schema_version": "1.1",
+    "seq": 6,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -87,8 +121,8 @@
     },
     "phase": "check",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 5,
+    "schema_version": "1.1",
+    "seq": 7,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -102,8 +136,8 @@
     },
     "phase": "check",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 6,
+    "schema_version": "1.1",
+    "seq": 8,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -114,8 +148,8 @@
     },
     "phase": "check",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 7,
+    "schema_version": "1.1",
+    "seq": 9,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -127,8 +161,8 @@
     },
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 8,
+    "schema_version": "1.1",
+    "seq": 10,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -141,8 +175,8 @@
     },
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 9,
+    "schema_version": "1.1",
+    "seq": 11,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -155,22 +189,22 @@
     },
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 10,
+    "schema_version": "1.1",
+    "seq": 12,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
     "iteration": null,
     "kind": "artifact_write",
     "payload": {
-      "bytes": 1035,
+      "bytes": 1150,
       "kind": "prompts",
       "path": "<RUN_DIR>/artifacts/remediation-1-prompt.txt"
     },
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 11,
+    "schema_version": "1.1",
+    "seq": 13,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -183,8 +217,8 @@
     },
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 12,
+    "schema_version": "1.1",
+    "seq": 14,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -195,8 +229,8 @@
     },
     "phase": null,
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 13,
+    "schema_version": "1.1",
+    "seq": 15,
     "ts": "2026-01-02T03:04:05Z"
   }
 ]

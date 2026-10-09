@@ -92,9 +92,7 @@ def triage_flags_supplied_while_disabled(args: argparse.Namespace) -> list[str]:
     return flags
 
 
-def validate_triage_overrides_enabled(
-    args: argparse.Namespace, *, triage_enabled: bool
-) -> None:
+def validate_triage_overrides_enabled(args: argparse.Namespace, *, triage_enabled: bool) -> None:
     if triage_enabled:
         return
     flags = triage_flags_supplied_while_disabled(args)
@@ -143,8 +141,13 @@ def validate_triage_reasoning_effort(
     triage_enabled: bool,
     triage_harness: str,
     triage_reasoning_effort: str | None,
+    cwd: Path | None = None,
 ) -> None:
-    if triage_enabled and triage_harness == "codex" and triage_reasoning_effort == "minimal":
+    if (
+        triage_enabled
+        and harnesses._resolve_catalog_driver(triage_harness, cwd=cwd) == "codex"
+        and triage_reasoning_effort == "minimal"
+    ):
         raise ValueError(
             "Codex triage cannot use reasoning effort 'minimal' because inherited "
             "Codex tools can make that provider request invalid; use "
@@ -176,10 +179,17 @@ def resolve_external_review_input_chars(
     if args.external_review_input_chars is not None:
         val = int(args.external_review_input_chars)
         source = "cli"
-    elif profile_runtime_key_explicit(profile_name, cwd, "external_review_input_chars"):
+    elif profile_runtime_key_explicit(
+        profile_name,
+        cwd,
+        "external_review_input_chars",
+        snapshot_path=getattr(args, "profile_snapshot", None),
+    ):
         val = profile.runtime.external_review_input_chars
         source = profile_source
-    elif is_large_context_gemini_review_model(review_harness, review_model):
+    elif is_large_context_gemini_review_model(
+        harnesses._resolve_catalog_driver(review_harness, cwd=cwd), review_model
+    ):
         val = DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
         source = "model-default"
     else:
@@ -212,30 +222,32 @@ def profile_runtime_key_explicit(
     profile_name: str | None,
     cwd: Path,
     key: str,
+    *,
+    snapshot_path: str | None = None,
 ) -> bool:
-    try:
-        user_file, project_file = profiles.load_profile_files(cwd=cwd)
-    except (OSError, ValueError):
-        return False
-    raw_sections: list[dict[str, object]] = []
-    for profile_file in (user_file, project_file):
-        if profile_file.raw_defaults:
-            raw_sections.append(profile_file.raw_defaults)
-        if profile_name and profile_name in profile_file.raw_profiles:
-            raw_sections.append(profile_file.raw_profiles[profile_name])
-    for raw in raw_sections:
-        runtime = raw.get("runtime")
-        if isinstance(runtime, dict) and key in runtime:
-            return True
-    return False
+    return profiles.profile_runtime_key_explicit(
+        profile_name, cwd, key, snapshot_path=snapshot_path
+    )
 
 
 def profile_or_default(
     name: str | None,
     cwd: Path,
     *,
+    snapshot_path: str | None = None,
     require_implemented: bool = True,
 ) -> profiles.Profile:
+    if snapshot_path is not None:
+        if not name:
+            raise ValueError("--profile-snapshot requires --profile")
+        profile_file = profiles.load_profile_file(Path(snapshot_path))
+        profile = profile_file.profiles.get(name)
+        if profile is None:
+            raise ValueError(
+                f"--profile-snapshot does not define profile {name!r}: {snapshot_path}"
+            )
+        profiles.validate_profile(profile, require_implemented=require_implemented)
+        return profile
     if name:
         return profiles.resolve_profile(name, cwd=cwd, require_implemented=require_implemented)
     return profiles.resolve_defaults(cwd=cwd, require_implemented=require_implemented)
@@ -286,9 +298,10 @@ def _resolve_model_phase(
     timeout_seconds: float | None,
     timeout_seconds_display: float | None,
     timeout_source: str,
+    cwd: Path,
 ) -> ResolvedPhaseConfig:
     harness = harness_override or phase.harness
-    harnesses.validate_harness_name(harness, field=f"--{phase_name}-harness")
+    harnesses.validate_harness_name(harness, field=f"--{phase_name}-harness", cwd=cwd)
     model = model_override or shared_model_override or phase.model
     reasoning_effort = (
         reasoning_effort_override or shared_reasoning_effort_override or phase.reasoning_effort
@@ -324,16 +337,29 @@ def build_loop_config(
     """
 
     try:
-        profile = profile_or_default(
-            args.profile,
-            cwd,
-            require_implemented=require_implemented,
-        )
+        snapshot_path = getattr(args, "profile_snapshot", None)
+        if snapshot_path:
+            profile = profile_or_default(
+                args.profile,
+                cwd,
+                snapshot_path=snapshot_path,
+                require_implemented=require_implemented,
+            )
+        else:
+            profile = profile_or_default(args.profile, cwd, require_implemented=require_implemented)
     except TypeError as exc:
         if "require_implemented" not in str(exc):
             raise
-        profile = profile_or_default(args.profile, cwd)
-    profile_source = f"profile:{args.profile}" if args.profile else "defaults"
+        profile = (
+            profile_or_default(args.profile, cwd, snapshot_path=snapshot_path)
+            if snapshot_path
+            else profile_or_default(args.profile, cwd)
+        )
+    profile_source = (
+        f"profile-snapshot:{args.profile_snapshot}"
+        if getattr(args, "profile_snapshot", None)
+        else (f"profile:{args.profile}" if args.profile else "defaults")
+    )
     base = pick(args.base, profile.pipeline.base, "main")
     triage_enabled = pick(args.triage_enabled, profile.triage.enabled, False)
     triage_contract = pick(args.triage_contract, profile.triage.contract, "v1")
@@ -426,14 +452,24 @@ def build_loop_config(
     artifact_dir = Path(artifact_dir_value) if artifact_dir_value else default_artifact_dir()
     search_root = artifact_dir if artifact_dir_value else artifact_dir.parent
     current_git_state = (
-        current_git_state_for_latest(cwd, base) if args.initial_review_file == "latest" else None
+        current_git_state_for_latest(cwd, base)
+        if args.initial_review_file == "latest" and args.initial_review_mode == "compatible"
+        else None
     )
     initial_review_file = resolve_initial_review_file(
         args.initial_review_file,
         search_root,
         current_git_state=current_git_state,
     )
+    if args.initial_review_file == "latest" and initial_review_file is None:
+        raise FileNotFoundError(
+            "--initial-review-file latest did not find an unresolved review artifact"
+        )
     initial_review_mode = "explicit" if initial_review_file is not None else "none"
+    if args.initial_review_mode is not None:
+        if initial_review_file is None:
+            raise ValueError("--initial-review-mode requires --initial-review-file")
+        initial_review_mode = args.initial_review_mode
     if initial_review_file is not None and not initial_review_file.is_file():
         raise FileNotFoundError(f"initial review file not found: {initial_review_file}")
     checks = tuple(args.check) if args.check is not None else profile.pipeline.checks
@@ -454,6 +490,7 @@ def build_loop_config(
             args.timeout_seconds,
             args.review_timeout_seconds,
         ),
+        cwd=cwd,
     )
     remediation_phase = _resolve_model_phase(
         phase_name="remediation",
@@ -472,27 +509,32 @@ def build_loop_config(
             args.timeout_seconds,
             args.remediation_timeout_seconds,
         ),
+        cwd=cwd,
     )
     if not args.dry_run:
-        harnesses.require_implemented_harness(review_phase.harness, field="review.harness")
+        harnesses.require_implemented_harness(review_phase.harness, field="review.harness", cwd=cwd)
         harnesses.require_implemented_harness(
-            remediation_phase.harness,
-            field="remediation.harness",
+            remediation_phase.harness, field="remediation.harness", cwd=cwd
         )
     triage_reasoning_effort = args.triage_reasoning_effort or profile.triage.reasoning_effort
     triage_harness = args.triage_harness or profile.triage.harness
-    harnesses.validate_harness_name(triage_harness, field="--triage-harness")
+    harnesses.validate_harness_name(triage_harness, field="--triage-harness", cwd=cwd)
     if triage_enabled and not args.dry_run:
-        harnesses.require_implemented_harness(triage_harness, field="triage.harness")
+        harnesses.require_implemented_harness(triage_harness, field="triage.harness", cwd=cwd)
     commit_message_harness = args.commit_message_harness or profile.commit.harness
-    harnesses.validate_harness_name(commit_message_harness, field="--commit-message-harness")
+    harnesses.validate_harness_name(
+        commit_message_harness, field="--commit-message-harness", cwd=cwd
+    )
     if commit_after_remediation and not args.dry_run:
-        harnesses.require_implemented_harness(commit_message_harness, field="commit.harness")
+        harnesses.require_implemented_harness(
+            commit_message_harness, field="commit.harness", cwd=cwd
+        )
     triage_model = args.triage_model or profile.triage.model
     validate_triage_reasoning_effort(
         triage_enabled=triage_enabled,
         triage_harness=triage_harness,
         triage_reasoning_effort=triage_reasoning_effort,
+        cwd=cwd,
     )
     commit_reasoning_effort_inherited = (
         args.commit_reasoning_effort is None
@@ -515,6 +557,7 @@ def build_loop_config(
         harness=commit_message_harness,
         model=commit_message_model,
         requested_effort=commit_reasoning_effort,
+        cwd=cwd,
     )
     commit_reasoning_effort = commit_effort_resolution.effective
     commit_reasoning_effort_requested = commit_effort_resolution.requested
@@ -564,6 +607,15 @@ def build_loop_config(
     }
     max_iterations = pick(args.max_iterations, profile.pipeline.max_iterations, 2)
     max_iterations = resolve_max_iterations(max_iterations)
+    final_review_remediation_passes = int(
+        pick(
+            args.final_review_remediation_passes,
+            profile.pipeline.final_review_remediation_passes,
+            0,
+        )
+    )
+    if final_review_remediation_passes < 0:
+        raise ValueError("final_review_remediation_passes must be 0 or greater")
     routing = replace(
         profile.triage.routing,
         enabled=routing_enabled,
@@ -772,6 +824,7 @@ def build_loop_config(
         ),
         dry_run=args.dry_run,
         final_review=pick(args.final_review, profile.pipeline.final_review, True),
+        final_review_remediation_passes=final_review_remediation_passes,
         max_remediation_input_chars=pick(
             args.max_remediation_input_chars,
             profile.runtime.max_remediation_input_chars,
@@ -837,6 +890,7 @@ def profile_from_loop_config(
             base=config.base,
             max_iterations=config.max_iterations,
             final_review=config.final_review,
+            final_review_remediation_passes=config.final_review_remediation_passes,
             checks=config.check_commands,
             check_timeout_seconds=config.check_timeout_seconds_display,
         ),

@@ -60,11 +60,36 @@
         }
       ],
       "iteration": 1,
+      "remediated": true,
       "review_status": "findings"
     }
   ],
   "latest_review_excerpt": "REVIEW_STATUS: findings",
   "max_iterations": 1,
+  "model_invocations": [
+    {
+      "duration_seconds": 0.0,
+      "harness": "codex",
+      "iteration": "1",
+      "model": null,
+      "outcome": "ok",
+      "phase": "review",
+      "reasoning_effort": null,
+      "returncode": 0,
+      "tokens": null
+    },
+    {
+      "duration_seconds": 0.0,
+      "harness": "codex",
+      "iteration": "1",
+      "model": null,
+      "outcome": "ok",
+      "phase": "remediate",
+      "reasoning_effort": null,
+      "returncode": 0,
+      "tokens": null
+    }
+  ],
   "pending_check_failures": false,
   "phase_config": {
     "checks": {
@@ -155,6 +180,7 @@
     "external_review_truncation_policy": "warn",
     "external_review_warning_seconds": 1800,
     "final_review": false,
+    "final_review_remediation_passes": 0,
     "full_auto": true,
     "harness_executables": {},
     "initial_review_mode": "none",

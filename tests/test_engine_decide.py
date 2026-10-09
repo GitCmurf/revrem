@@ -15,7 +15,9 @@ from code_review_loop.core.engine import (
     ReviewDone,
     RunChecks,
     RunRemediation,
+    RunStaleValidation,
     RunTriage,
+    StaleValidationDone,
     Stop,
     TriageDone,
     decide,
@@ -62,6 +64,88 @@ def test_decide_review_non_final_findings_continues() -> None:
     action = decide(cfg, acc, event)
 
     assert action == RunTriage()
+
+
+def test_decide_stale_initial_review_validates_before_triage() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+        initial_review_mode="stale",
+    )
+    acc = LoopAccumulator(
+        pending_check_failures="",
+        last_review_output="actionable finding",
+        stale_review_loaded=True,
+    )
+    event = ReviewDone(is_final=False, status="findings")
+
+    action = decide(cfg, acc, event, iteration=1)
+
+    assert action == RunStaleValidation()
+
+
+def test_decide_stale_initial_review_without_loaded_artifact_uses_normal_flow() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+        initial_review_mode="stale",
+    )
+    acc = LoopAccumulator(pending_check_failures="", last_review_output="actionable finding")
+    event = ReviewDone(is_final=False, status="findings")
+
+    action = decide(cfg, acc, event, iteration=1)
+
+    assert action == RunTriage()
+
+
+def test_decide_stale_validation_resolved_runs_checks_before_exit() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True, initial_review_mode="stale")
+    acc = LoopAccumulator(
+        pending_check_failures="",
+        stale_review_resolved=True,
+    )
+
+    action = decide(cfg, acc, StaleValidationDone(status="resolved"), iteration=1)
+
+    assert action == RunChecks()
+
+
+def test_decide_stale_validation_still_applies_enters_triage() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True, initial_review_mode="stale")
+    acc = LoopAccumulator(pending_check_failures="")
+
+    action = decide(cfg, acc, StaleValidationDone(status="still_applies"), iteration=1)
+
+    assert action == RunTriage()
+
+
+def test_decide_stale_validation_still_applies_without_triage_remediates() -> None:
+    cfg = ConfigSnapshot(3, False, True, "fail", True, initial_review_mode="stale")
+    acc = LoopAccumulator(pending_check_failures="")
+
+    action = decide(cfg, acc, StaleValidationDone(status="still_applies"), iteration=1)
+
+    assert action == RunRemediation()
+
+
+def test_decide_stale_validation_unknown_fails() -> None:
+    cfg = ConfigSnapshot(3, True, True, "fail", True, initial_review_mode="stale")
+    acc = LoopAccumulator(pending_check_failures="")
+
+    action = decide(cfg, acc, StaleValidationDone(status="unknown"), iteration=1)
+
+    assert action == Stop(
+        OutcomeFailed(
+            reason="stale_validation_failed",
+            error="stale review validation returned unknown status",
+        )
+    )
 
 
 def test_decide_review_non_final_clear_with_check_failures_continues() -> None:
@@ -127,6 +211,61 @@ def test_decide_f5_final_review_findings_exits_findings() -> None:
     action = decide(cfg, acc, event)
 
     assert action == Stop(OutcomeFindings(reason="max_iterations_reached"))
+
+
+def test_decide_final_review_findings_begin_bounded_remediation() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+        final_review_remediation_passes=1,
+    )
+    acc = LoopAccumulator(pending_check_failures="")
+    event = ReviewDone(is_final=True, status="findings")
+
+    action = decide(cfg, acc, event, iteration=3)
+
+    assert type(action).__name__ == "BeginFinalReviewRemediation"
+
+
+def test_decide_final_review_findings_stop_after_recovery_budget() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+        final_review_remediation_passes=1,
+    )
+    acc = LoopAccumulator(pending_check_failures="")
+    event = ReviewDone(is_final=True, status="findings")
+
+    action = decide(cfg, acc, event, iteration=4)
+
+    assert action == Stop(OutcomeFindings(reason="max_iterations_reached"))
+
+
+def test_decide_final_findings_can_recover_pending_check_failures() -> None:
+    cfg = ConfigSnapshot(
+        max_iterations=3,
+        triage_enabled=True,
+        commit_after_remediation=True,
+        commit_on_hook_failure="fail",
+        final_review=True,
+        final_review_remediation_passes=1,
+    )
+    acc = LoopAccumulator(pending_check_failures="pytest failed")
+
+    action = decide(
+        cfg,
+        acc,
+        ReviewDone(is_final=True, status="findings"),
+        iteration=3,
+    )
+
+    assert type(action).__name__ == "BeginFinalReviewRemediation"
 
 
 def test_decide_f6_final_review_unknown_exits_unknown() -> None:

@@ -18,7 +18,12 @@ def effective_route_timeout_seconds(
     dogfood invocations like ``--timeout-seconds 600`` from being bypassed by
     a profile route that was saved as ``timeout_seconds = 0``.
     """
-    route_timeout = phase_timeout_seconds(config, resolved_route.timeout_seconds)
+    inherited_timeout = (
+        config.remediation_timeout_seconds
+        if resolved_route.timeout_seconds is None
+        else resolved_route.timeout_seconds
+    )
+    route_timeout = phase_timeout_seconds(config, inherited_timeout)
     cli_cap = explicit_cli_remediation_timeout_cap(config)
     if cli_cap is None:
         return route_timeout

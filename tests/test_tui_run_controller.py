@@ -1,0 +1,873 @@
+from __future__ import annotations
+
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from io import StringIO
+from pathlib import Path
+
+import pytest
+from support.git_fixtures import init_repo
+
+from code_review_loop import events, profiles, tui_run_controller, tui_state
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+class FixedIdentity:
+    def new_run_id(self) -> str:
+        return "fixedrun"
+
+
+class FakeProcess:
+    def __init__(self, returncode: int = 0):
+        self.returncode = returncode
+        self.stdout = StringIO("stdout line\n")
+        self.stderr = StringIO("stderr line\n")
+        self.pid = 12345
+        self.signals: list[int] = []
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        return self.returncode
+
+    def send_signal(self, signum: int) -> None:
+        self.signals.append(signum)
+
+
+def test_child_output_drain_survives_invalid_utf8(tmp_path):
+    controller = tui_run_controller.LiveRunController()
+    plan = tui_state.LaunchPlan(profile_name="demo", mode="run", argv=("revrem",), shell_command="revrem")
+    controller.start(
+        profile=profiles.Profile(name="demo"), plan=plan, cwd=tmp_path,
+        entrypoint_resolver=lambda argv: [sys.executable, "-c",
+            "import os; os.write(1, b'bad\\xff\\nafter\\n'); os.write(2, b'bad\\xff\\nafter\\n')"],
+    )
+    assert controller.process.wait(timeout=5) == 0
+    controller.refresh()
+    assert controller.stdout_lines() == ("bad\ufffd", "after")
+    assert controller.stderr_lines() == ("bad\ufffd", "after")
+
+
+def test_descendant_identity_handles_non_utf8_process_names(tmp_path, monkeypatch):
+    proc_stat = tmp_path / "stat"
+    proc_stat.write_bytes(b"123 (name\xff) " + b" ".join([b"S", *([b"0"] * 18), b"456"]))
+    original = Path.read_text
+
+    def read_text(path, *args, **kwargs):
+        return original(proc_stat if str(path) == "/proc/123/stat" else path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    assert tui_run_controller._descendant_identity(123) == tui_run_controller.DescendantIdentity(123, "456")
+
+
+def test_prepare_live_run_launch_uses_profile_artifact_dir_precedence(tmp_path):
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    launch = tui_run_controller.prepare_live_run_launch(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        identity=FixedIdentity(),
+    )
+
+    assert launch.artifact_dir_arg == "custom/run"
+    assert launch.artifact_dir == tmp_path / "custom/run"
+    assert launch.argv == (
+        "revrem",
+        "--profile",
+        "demo",
+        "--artifact-dir",
+        "custom/run",
+        "--no-tty",
+        "--pending-review",
+        "ignore",
+        "--summary-format",
+        "json",
+    )
+
+
+def test_prepare_live_run_launch_generates_default_shape(tmp_path):
+    profile = profiles.Profile(name="demo")
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    launch = tui_run_controller.prepare_live_run_launch(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        identity=FixedIdentity(),
+    )
+
+    assert launch.artifact_dir_arg.startswith(".revrem/runs/")
+    assert launch.artifact_dir_arg.endswith("-fixedrun")
+    assert launch.artifact_dir == tmp_path / launch.artifact_dir_arg
+
+
+def test_live_run_controller_starts_child_with_machine_friendly_argv(tmp_path):
+    profile = profiles.Profile(name="demo")
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+    calls = []
+
+    def fake_popen(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return FakeProcess()
+
+    controller = tui_run_controller.LiveRunController()
+    launch = controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=lambda argv: [
+            "python",
+            "-m",
+            "code_review_loop",
+            *argv[1:],
+        ],
+        popen_factory=fake_popen,
+        identity=FixedIdentity(),
+    )
+
+    assert controller.status == "running"
+    assert calls[0][0] == [
+        "python",
+        "-m",
+        "code_review_loop",
+        "--profile",
+        "demo",
+        "--artifact-dir",
+        launch.artifact_dir_arg,
+        "--no-tty",
+        "--pending-review",
+        "ignore",
+        "--summary-format",
+        "json",
+    ]
+    assert calls[0][1]["cwd"] == tmp_path
+    assert calls[0][1]["stdout"] is tui_run_controller.subprocess.PIPE
+    assert calls[0][1]["stderr"] is tui_run_controller.subprocess.PIPE
+    assert calls[0][1]["text"] is True
+    assert calls[0][1]["start_new_session"] is True
+
+
+def test_profile_snapshot_keeps_gemini_default_context_cap_implicit(tmp_path):
+    profile = profiles.Profile(
+        name="demo",
+        review=profiles.PhaseConfig(
+            harness="gemini", model="gemini-3.1-pro-preview"
+        ),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo", mode="run", argv=("revrem", "--profile", "demo"), shell_command=""
+    )
+    controller = tui_run_controller.LiveRunController()
+    launch = controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(),
+        identity=FixedIdentity(),
+        snapshot_profile=True,
+    )
+
+    snapshot = Path(launch.argv[-1]).read_text(encoding="utf-8")
+    assert "external_review_input_chars" not in snapshot
+
+
+def test_profile_snapshot_keeps_explicit_default_context_cap(tmp_path):
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.review]\nharness = \"gemini\"\nmodel = \"gemini-3.1-pro-preview\"\n"
+        "[profiles.demo.runtime]\nexternal_review_input_chars = 80000\n",
+        encoding="utf-8",
+    )
+    profile = profiles.resolve_profile("demo", cwd=tmp_path, home=tmp_path)
+
+    snapshot = tui_run_controller.profile_snapshot_toml(profile, cwd=tmp_path)
+
+    assert "external_review_input_chars = 80000" in snapshot
+
+
+def test_start_marks_setup_failed_when_launch_raises(tmp_path):
+    profile = profiles.Profile(name="demo")
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    def boom_popen(*_args, **_kwargs):
+        raise OSError("no such executable")
+
+    controller = tui_run_controller.LiveRunController()
+    with pytest.raises(OSError):
+        controller.start(
+            profile=profile,
+            plan=plan,
+            cwd=tmp_path,
+            entrypoint_resolver=list,
+            popen_factory=boom_popen,
+            identity=FixedIdentity(),
+        )
+
+    assert controller.status == "setup-failed"
+    assert controller.process is None
+    assert controller.message is not None
+    assert "no such executable" in controller.message
+    # A failed launch must not look like an active run to the TUI.
+    assert controller.refresh() == "setup-failed"
+
+
+def test_classify_exit_requires_artifacts_for_clean_cancellation():
+    assert tui_run_controller.classify_exit(0) == "failed"
+    assert (
+        tui_run_controller.classify_exit(0, summary={"final_status": "clear"})
+        == "completed-clear"
+    )
+    assert (
+        tui_run_controller.classify_exit(0, summary={"final_status": "findings"})
+        == "failed"
+    )
+    assert tui_run_controller.classify_exit(0, summary={}) == "failed"
+    assert tui_run_controller.classify_exit(2) == "completed-findings"
+    assert (
+        tui_run_controller.classify_exit(2, summary={"final_status": "findings"})
+        == "completed-findings"
+    )
+    assert (
+        tui_run_controller.classify_exit(2, summary={"final_status": "unknown"})
+        == "completed-unknown"
+    )
+    assert tui_run_controller.classify_exit(3) == "budget"
+    assert tui_run_controller.classify_exit(4) == "setup-failed"
+    assert tui_run_controller.classify_exit(5) == "failed"
+    assert (
+        tui_run_controller.classify_exit(
+            5,
+            summary={"final_status": "error", "stopped_reason": "cancelled"},
+        )
+        == "cancelled"
+    )
+    assert tui_run_controller.classify_exit(6) == "failed"
+    assert tui_run_controller.classify_exit(130) == "interrupted-before-run-initialized"
+    assert (
+        tui_run_controller.classify_exit(-signal.SIGINT)
+        == "interrupted-before-run-initialized"
+    )
+
+
+def test_cancel_sends_sigint_to_process_group(monkeypatch):
+    process = FakeProcess(returncode=5)
+    process.returncode = None  # type: ignore[assignment]
+    signals = []
+
+    def fake_getpgid(pid):
+        assert pid == process.pid
+        return 999
+
+    def fake_killpg(pgid, signum):
+        signals.append((pgid, signum))
+        process.returncode = 5  # type: ignore[assignment]
+
+    monkeypatch.setattr(tui_run_controller.os, "getpgid", fake_getpgid)
+    monkeypatch.setattr(tui_run_controller.os, "killpg", fake_killpg)
+    controller = tui_run_controller.LiveRunController(process=process, status="running")
+
+    status = controller.cancel(grace_seconds=0)
+
+    assert status == "failed"
+    assert signals == [(999, tui_run_controller.signal.SIGINT)]
+
+
+@pytest.mark.parametrize("still_alive", [False, True])
+def test_cancel_reports_forced_cleanup_after_escalation(monkeypatch, still_alive):
+    class StubbornProcess(FakeProcess):
+        def __init__(self):
+            super().__init__(returncode=None)  # type: ignore[arg-type]
+            self.wait_calls = 0
+
+        def poll(self) -> int | None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_calls += 1
+            if self.wait_calls < 3 or still_alive:
+                raise subprocess.TimeoutExpired(["fake"], timeout)
+            self.returncode = -9
+            return -9
+
+    process = StubbornProcess()
+    signals = []
+    monkeypatch.setattr(tui_run_controller.os, "getpgid", lambda pid: 999)
+    monkeypatch.setattr(
+        tui_run_controller.os,
+        "killpg",
+        lambda pgid, signum: signals.append((pgid, signum)),
+    )
+    controller = tui_run_controller.LiveRunController(process=process, status="running")
+
+    controller.stdout_tail = ("previous run",)
+    controller._stdout_buffer.append("current output")
+    controller._stderr_buffer.append("current error")
+    status = controller.cancel(grace_seconds=0)
+
+    assert controller.stdout_tail == ("current output",)
+    assert controller.stderr_tail == ("current error",)
+    assert controller.exit_code == (None if still_alive else -9)
+    assert status == "failed-forced-cleanup"
+    assert signals == [
+        (999, tui_run_controller.signal.SIGINT),
+        (999, tui_run_controller.signal.SIGTERM),
+        (999, tui_run_controller.signal.SIGKILL),
+    ]
+
+
+def test_delayed_descendant_termination_skips_pid_reused_by_another_process(monkeypatch):
+    original = tui_run_controller.DescendantIdentity(pid=456, start_time="100")
+    signals: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(tui_run_controller.os, "kill", lambda pid, signum: None)
+    monkeypatch.setattr(
+        tui_run_controller,
+        "_descendant_identity",
+        lambda pid: tui_run_controller.DescendantIdentity(pid=pid, start_time="200"),
+    )
+    monkeypatch.setattr(
+        tui_run_controller,
+        "_signal_pid_group",
+        lambda pid, signum: signals.append((pid, signum)) or True,
+    )
+
+    tui_run_controller._terminate_descendants(frozenset({original}), grace_seconds=0)
+
+    assert signals == []
+
+
+def test_cancel_allows_acknowledged_child_its_separate_finalization_deadline(
+    tmp_path, monkeypatch
+):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    sink = events.JsonlSink(run_dir, "run-id")
+    sink.emit(
+        "cancellation",
+        phase="run",
+        payload={"reason": "operator_interrupt", "message": "cancelled by operator"},
+    )
+    sink.close()
+
+    class FinalizingProcess(FakeProcess):
+        def __init__(self):
+            super().__init__(returncode=None)  # type: ignore[arg-type]
+            self.wait_calls = 0
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_calls += 1
+            if self.wait_calls == 1:
+                raise subprocess.TimeoutExpired(["fake"], timeout)
+            assert timeout == 3
+            (run_dir / "summary.json").write_text(
+                json.dumps({"final_status": "error", "stopped_reason": "cancelled"}),
+                encoding="utf-8",
+            )
+            self.returncode = 5
+            return 5
+
+    process = FinalizingProcess()
+    signals = []
+    monkeypatch.setattr(tui_run_controller.os, "getpgid", lambda pid: 999)
+    monkeypatch.setattr(
+        tui_run_controller.os,
+        "killpg",
+        lambda pgid, signum: signals.append((pgid, signum)),
+    )
+    controller = tui_run_controller.LiveRunController(
+        process=process,
+        status="running",
+        launch=tui_run_controller.LiveRunLaunch(
+            argv=("revrem",),
+            artifact_dir_arg=str(run_dir),
+            artifact_dir=run_dir,
+        ),
+    )
+
+    status = controller.cancel(grace_seconds=0, finalization_seconds=3)
+
+    assert status == "cancelled"
+    assert process.wait_calls == 2
+    assert signals == [(999, tui_run_controller.signal.SIGINT)]
+
+
+def test_controller_cancels_real_revrem_child_and_reads_cancellation_summary(
+    tmp_path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "README.md").write_text("# Fixture\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "README.md"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True
+    )
+    (repo / ".revrem.toml").write_text(
+        """
+[profiles.cancel-demo]
+review.harness = "fake"
+review.model = "slow_cancel"
+remediation.harness = "fake"
+remediation.model = "clear"
+triage.enabled = false
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REVREM_ALLOW_FAKE_HARNESS", "1")
+    profile = profiles.resolve_profile("cancel-demo", cwd=repo)
+    plan = tui_state.launch_plan(profile, dry_run=False)
+    controller = tui_run_controller.LiveRunController()
+    env = _source_checkout_env()
+
+    launch = controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=repo,
+        entrypoint_resolver=lambda argv: [
+            sys.executable,
+            "-m",
+            "code_review_loop",
+            *argv[1:],
+        ],
+        env=env,
+    )
+    deadline = time.monotonic() + 10
+    # File creation happens during prepare_run, before cancellation is caught.
+    # A phase event proves the child entered its controlled run lifecycle.
+    while not any(event.kind == "phase_start" for event in controller.read_live_events().events):
+        if time.monotonic() > deadline:
+            raise AssertionError(
+                "timed out waiting for a phase_start event; "
+                f"status={controller.refresh()}; stderr={controller.stderr_lines()!r}; "
+                f"stdout={controller.stdout_lines()!r}"
+            )
+        time.sleep(0.01)
+
+    status = controller.cancel(grace_seconds=5)
+
+    summary = json.loads(
+        (launch.artifact_dir / "summary.json").read_text(encoding="utf-8")
+    )
+    assert status == "cancelled"
+    assert summary["stopped_reason"] == "cancelled"
+    assert any(
+        event.kind == "cancellation" for event in controller.read_live_events().events
+    )
+
+
+def test_cancel_reaps_nested_provider_child_with_own_session(tmp_path, monkeypatch):
+    repo = init_repo(tmp_path / "repo")
+    provider = tmp_path / "provider.py"
+    nested_pid_file = tmp_path / "nested.pid"
+    provider.write_text(
+        """#!/usr/bin/env python3
+import os
+import subprocess
+import sys
+import time
+
+child = subprocess.Popen(
+    [sys.executable, "-c", "import time; time.sleep(60)"],
+    start_new_session=True,
+)
+with open(os.environ["REVREM_NESTED_PID_FILE"], "w", encoding="utf-8") as handle:
+    handle.write(str(child.pid))
+    handle.flush()
+time.sleep(60)
+""",
+        encoding="utf-8",
+    )
+    provider.chmod(0o755)
+    (repo / ".revrem.toml").write_text(
+        f"""
+[profiles.cancel-nested]
+
+[profiles.cancel-nested.pipeline]
+max_iterations = 1
+final_review = false
+
+[profiles.cancel-nested.review]
+harness = "claude"
+model = "nested"
+
+[profiles.cancel-nested.remediation]
+harness = "fake"
+model = "clear"
+
+[profiles.cancel-nested.triage]
+enabled = false
+
+[profiles.cancel-nested.runtime]
+provider_retry_attempts = 1
+
+[profiles.cancel-nested.runtime.harness_executables]
+claude = "{provider}"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REVREM_ALLOW_FAKE_HARNESS", "1")
+    monkeypatch.setenv("REVREM_NESTED_PID_FILE", str(nested_pid_file))
+    profile = profiles.resolve_profile("cancel-nested", cwd=repo)
+    plan = tui_state.launch_plan(profile, dry_run=False)
+    controller = tui_run_controller.LiveRunController()
+    env = _source_checkout_env()
+
+    try:
+        controller.start(
+            profile=profile,
+            plan=plan,
+            cwd=repo,
+            entrypoint_resolver=lambda argv: [
+                sys.executable,
+                "-m",
+                "code_review_loop",
+                *argv[1:],
+            ],
+            env=env,
+        )
+        nested_pid = _wait_for_pid_file(nested_pid_file)
+
+        # Allow the normal SIGINT cancellation path enough headroom to write
+        # summary.json and exit before escalation, even when the suite saturates
+        # CPU; the sibling real-child cancel test uses the same grace.
+        status = controller.cancel(grace_seconds=5)
+
+        assert status == "cancelled"
+        _wait_until_not_running(nested_pid)
+    finally:
+        controller.cancel(grace_seconds=1)
+
+
+def test_proc_children_by_parent_falls_back_to_ps_without_proc(monkeypatch):
+    class _FakeProcPath:
+        def is_dir(self) -> bool:
+            return False
+
+    def _fake_path_factory(value: str) -> _FakeProcPath:
+        assert value == "/proc"
+        return _FakeProcPath()
+
+    def _fake_check_output(cmd, *args, **kwargs):
+        assert cmd == ["ps", "-eo", "pid=,ppid="]
+        assert kwargs["text"] is True
+        return "\n".join(
+            [
+                "  42   1",
+                "105   42",
+                "   6   2",
+            ]
+        )
+
+    monkeypatch.setattr(tui_run_controller, "Path", _fake_path_factory)
+    monkeypatch.setattr(
+        tui_run_controller.subprocess,
+        "check_output",
+        _fake_check_output,
+    )
+
+    assert tui_run_controller._proc_children_by_parent() == {
+        1: (42,),
+        42: (105,),
+        2: (6,),
+    }
+
+
+def test_live_events_ignore_stale_explicit_artifact_dir_until_replaced(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    old_sink = events.JsonlSink(run_dir, "old-run")
+    old_sink.emit("phase_start", phase="review")
+    old_sink.close()
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(),
+    )
+
+    assert controller.read_live_events().ready is False
+
+    new_sink = events.JsonlSink(run_dir, "new-run")
+    new_sink.emit("phase_start", phase="review", payload={"message": "new"})
+    new_sink.close()
+
+    snapshot = controller.read_live_events()
+    assert snapshot.ready is True
+    assert [event.run_id for event in snapshot.events] == ["new-run"]
+
+
+def test_live_events_ignore_malformed_stale_file_until_identity_changes(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    events_path = run_dir / events.EVENTS_FILENAME
+    events_path.write_text("{not json}\n", encoding="utf-8")
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(),
+    )
+
+    assert controller.read_live_events().ready is False
+
+    new_sink = events.JsonlSink(run_dir, "new-run")
+    new_sink.emit("phase_start", phase="review")
+    new_sink.close()
+
+    snapshot = controller.read_live_events()
+    assert snapshot.ready is True
+    assert [event.run_id for event in snapshot.events] == ["new-run"]
+
+
+def test_live_events_expose_non_terminal_rows_before_close(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(returncode=None),
+    )
+
+    sink = events.JsonlSink(run_dir, "new-run")
+    sink.emit("phase_start", phase="review", payload={"message": "start"})
+
+    snapshot = controller.read_live_events()
+    assert snapshot.ready is True
+    views = tui_state.event_views_from_events(snapshot.events)
+    assert [(event.seq, event.kind, event.detail) for event in views] == [
+        (1, "phase_start", "start"),
+    ]
+
+    sink.emit("phase_result", phase="review", payload={"status": "clear"})
+    sink.close()
+
+    snapshot = controller.read_live_events()
+    views = tui_state.event_views_from_events(snapshot.events)
+    assert [(event.seq, event.kind, event.detail) for event in views] == [
+        (1, "phase_start", "start"),
+        (2, "phase_result", "clear"),
+    ]
+
+
+def test_finish_ignores_stale_summary_from_explicit_artifact_dir(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "summary.json").write_text(
+        json.dumps({"final_status": "error", "stopped_reason": "cancelled"}),
+        encoding="utf-8",
+    )
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(returncode=5),
+    )
+
+    status = controller.finish(5)
+
+    assert status == "failed"
+
+
+def test_finish_accepts_replaced_summary_from_explicit_artifact_dir(tmp_path):
+    run_dir = tmp_path / "custom" / "run"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps({"final_status": "error", "stopped_reason": "cancelled"}),
+        encoding="utf-8",
+    )
+    profile = profiles.Profile(
+        name="demo",
+        output=profiles.OutputConfig(artifact_dir="custom/run"),
+    )
+    plan = tui_state.LaunchPlan(
+        profile_name="demo",
+        mode="run",
+        argv=("revrem", "--profile", "demo"),
+        shell_command="revrem --profile demo",
+    )
+    controller = tui_run_controller.LiveRunController()
+    controller.start(
+        profile=profile,
+        plan=plan,
+        cwd=tmp_path,
+        entrypoint_resolver=list,
+        popen_factory=lambda *_args, **_kwargs: FakeProcess(returncode=5),
+    )
+    summary_path.unlink()
+    summary_path.write_text(
+        json.dumps({"final_status": "error", "stopped_reason": "cancelled"}),
+        encoding="utf-8",
+    )
+
+    status = controller.finish(5)
+
+    assert status == "cancelled"
+
+
+def test_terminal_statuses_cover_all_non_idle_running_states():
+    statuses = set(tui_run_controller.TERMINAL_STATUSES)
+
+    assert statuses == {
+        "completed-clear",
+        "completed-findings",
+        "completed-unknown",
+        "budget",
+        "setup-failed",
+        "cancelled",
+        "interrupted-before-run-initialized",
+        "failed",
+        "failed-forced-cleanup",
+    }
+
+
+def _wait_for_pid_file(path: Path) -> int:
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if path.is_file():
+            return int(path.read_text(encoding="utf-8"))
+        time.sleep(0.01)
+    raise AssertionError("timed out waiting for nested pid file")
+
+
+def _wait_until_not_running(pid: int) -> None:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if not _pid_is_running(pid):
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"nested child still running: {pid}")
+
+
+def _pid_is_running(pid: int) -> bool:
+    # os.kill(pid, 0) is the portable liveness probe; it governs on hosts
+    # without /proc. /proc only refines the result so an already-reaped
+    # zombie (which os.kill still reports as alive) is treated as gone.
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    proc_stat = Path("/proc") / str(pid) / "stat"
+    try:
+        stat_text = proc_stat.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        # /proc is unavailable or the entry vanished after os.kill succeeded.
+        return True
+    close_paren = stat_text.rfind(")")
+    if close_paren != -1:
+        fields = stat_text[close_paren + 1 :].strip().split()
+        if fields and fields[0] == "Z":
+            return False
+    return True
+
+
+def _source_checkout_env() -> dict[str, str]:
+    env = dict(os.environ)
+    pythonpath_entries = [str(_REPO_ROOT / "src")]
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+    return env

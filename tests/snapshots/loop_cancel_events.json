@@ -19,7 +19,7 @@
     },
     "phase": "review",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "seq": 1,
     "ts": "2026-01-02T03:04:05Z"
   },
@@ -32,7 +32,7 @@
     },
     "phase": "run",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "seq": 2,
     "ts": "2026-01-02T03:04:05Z"
   },
@@ -45,7 +45,7 @@
     },
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "seq": 3,
     "ts": "2026-01-02T03:04:05Z"
   },
@@ -59,7 +59,7 @@
     },
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "seq": 4,
     "ts": "2026-01-02T03:04:05Z"
   },
@@ -71,7 +71,7 @@
     },
     "phase": null,
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "seq": 5,
     "ts": "2026-01-02T03:04:05Z"
   }

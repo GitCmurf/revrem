@@ -1,0 +1,31 @@
+[profiles.current-codex]
+description = "Bounded Astra review, Luna triage and Sol 6.1 remediation. Add repository-native checks."
+
+[profiles.current-codex.pipeline]
+max_iterations = 2
+checks = ["git diff --check"]
+
+[profiles.current-codex.review]
+model = "gpt-6-astra"
+reasoning_effort = "medium"
+timeout_seconds = 300
+
+[profiles.current-codex.triage]
+enabled = true
+contract = "v2"
+model = "gpt-6-luna"
+reasoning_effort = "medium"
+timeout_seconds = 180
+
+[profiles.current-codex.remediation]
+model = "gpt-6.1-sol"
+reasoning_effort = "medium"
+timeout_seconds = 300
+
+[profiles.current-codex.commit]
+message_model = "gpt-6-luna"
+reasoning_effort = "low"
+timeout_seconds = 60
+
+[profiles.current-codex.budgets]
+max_wall_seconds = 900

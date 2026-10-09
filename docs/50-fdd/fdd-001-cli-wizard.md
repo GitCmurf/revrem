@@ -3,8 +3,8 @@ document_id: REVREM-FDD-001
 type: FDD
 title: CLI Wizard
 status: Draft
-version: '0.2'
-last_updated: '2026-06-15'
+version: '0.3'
+last_updated: '2026-09-02'
 owner: GitCmurf
 docops_version: '2.0'
 area: cli
@@ -50,6 +50,12 @@ and run history.
   through the normal CLI parser. History lookup filters by repository before
   compatibility selection so newer runs from other repositories cannot hide a
   current-repository offer.
+- Before the run-shape editing menus, the wizard performs the same startup
+  pending-review discovery as the normal interactive CLI path. Accepting a
+  compatible or stale review serializes `--initial-review-file` plus
+  `--initial-review-mode compatible|stale`; choosing start-fresh review serializes
+  `--pending-review ignore` so the completed wizard command does not prompt a
+  second time.
 - The first screen is the recommended run-shape diagram. Profile selection is
   available from "choose another profile" and distinguishes `no-profile`
   merged defaults from profiles named `default`.
@@ -70,6 +76,10 @@ and run history.
   remediation pass limit, terminal output mode, review, triage, routing,
   remediation, verification checks, inner check retry policy, conditional
   commit-message drafting, final-review behavior, and budgets.
+- Run settings expose the independent final-review remediation limit. When it
+  is non-zero, the preview shows that final-review findings can trigger up to
+  that many additional triage, remediate, verify, commit, and final-review
+  cycles; it never folds these cycles into the ordinary remediation pass limit.
 - The normal path accepts the preview. Edit screens cover run settings
   (base branch, pass limit, checks, final review, output, wall-clock budget)
   and model settings. Model settings are presented as a phase table: review,
@@ -100,6 +110,12 @@ and run history.
   previous command, including `--routing-strict`, `--no-routing-strict`, and
   `--no-allow-model-escalation`, so the previewed command does not fall back to
   profile defaults for those fields.
+- Last-run recovery rehydrates the persisted effective triage routing and
+  prompt snapshot before applying explicit recovery overrides. This preserves
+  unsaved route-table edits and prompt settings when the profile later changes.
+- Catalog aliases use their resolved provider driver when deciding whether a
+  provider default can satisfy a missing model, so a Codex alias remains
+  runnable without an explicit model.
 - Profiles without routes explain how to choose or create a routed profile
   instead of only saying routing is unavailable. This repository's project
   `default` profile keeps triage opt-in but includes v2 route definitions.

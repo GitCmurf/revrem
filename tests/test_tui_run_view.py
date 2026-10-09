@@ -1,0 +1,487 @@
+from __future__ import annotations
+
+from datetime import UTC
+from pathlib import Path
+
+from code_review_loop import events as event_model
+from code_review_loop import profiles, tui_run_state
+
+
+def _profile(
+    tmp_path: Path,
+    *,
+    triage: bool = False,
+    commit: bool = True,
+    inner: int = 0,
+    final_recovery: int = 0,
+    checks: tuple[str, ...] | None = ("pytest -q",),
+) -> profiles.Profile:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    body = [
+        "[profiles.p]",
+        "[profiles.p.pipeline]",
+        "base='main'",
+        "max_iterations=11",
+        f"final_review_remediation_passes={final_recovery}",
+        "[profiles.p.triage]",
+        f"enabled={'true' if triage else 'false'}",
+        "[profiles.p.commit]",
+        f"enabled={'true' if commit else 'false'}",
+        "[profiles.p.runtime]",
+        f"inner_check_retries={inner}",
+    ]
+    checks_value = "[]" if checks is None else f"[{', '.join(repr(command) for command in checks)}]"
+    body.insert(5, f"checks={checks_value}")
+    (repo / ".revrem.toml").write_text("\n".join(body) + "\n", encoding="utf-8")
+    return profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+
+
+def _ev(
+    seq: int,
+    kind: str,
+    phase: str | None = None,
+    iteration: int | str | None = None,
+    **payload: object,
+) -> event_model.Event:
+    return event_model.Event(
+        run_id="r",
+        seq=seq,
+        kind=kind,
+        phase=phase,
+        iteration=iteration,
+        payload=payload,
+    )
+
+
+def test_pending_when_no_events(tmp_path: Path) -> None:
+    view = tui_run_state.run_loop_view((), _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+
+    assert states["review"] == "pending"
+    assert view.iteration is None
+    assert view.max_iterations == 11
+
+
+def test_running_and_done_states_map_remediate(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "review", 1),
+        _ev(2, "phase_result", "review", 1, summary="2 findings"),
+        _ev(3, "phase_start", "remediate", 1),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+
+    assert states["review"] == "done"
+    assert states["remediation"] == "running"
+    assert states["commit"] == "pending"
+    assert view.iteration == 1
+
+
+def test_live_view_labels_iterations_beyond_outer_limit_as_final_recovery(
+    tmp_path: Path,
+) -> None:
+    events = (_ev(1, "phase_start", "remediate", 12),)
+
+    view = tui_run_state.run_loop_view(
+        events,
+        _profile(tmp_path, final_recovery=2),
+    )
+
+    assert view.final_review_remediation_pass == 1
+    assert view.final_review_remediation_passes == 2
+
+
+def test_stale_validation_maps_to_the_review_phase(tmp_path: Path) -> None:
+    view = tui_run_state.run_loop_view(
+        (_ev(1, "phase_start", "stale-validation", 1),), _profile(tmp_path)
+    )
+
+    states = {phase.name: phase.state for phase in view.phases}
+
+    assert states["review"] == "running"
+
+
+def test_disabled_phases_render_disabled(tmp_path: Path) -> None:
+    view = tui_run_state.run_loop_view((), _profile(tmp_path, triage=False, commit=False))
+    states = {phase.name: phase.state for phase in view.phases}
+
+    assert states["triage"] == "disabled"
+    assert states["commit"] == "disabled"
+
+
+def test_checks_state_from_check_result_events(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 2),
+        _ev(2, "phase_result", "remediate", 2),
+        _ev(3, "check_result", "test", 2, name="pytest -q", status="passed"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["checks"] == "done"
+    assert details["checks"] == "passed"
+
+
+def test_check_phase_start_marks_checks_running(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 2),
+        _ev(2, "phase_result", "remediate", 2),
+        _ev(3, "phase_start", "check", 2, message="pytest -q"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["checks"] == "running"
+    assert details["checks"] == ""
+
+
+def test_second_check_is_running_after_first_check_passes(tmp_path: Path) -> None:
+    records = (
+        _ev(1, "phase_start", "check", "1.1"),
+        _ev(2, "check_result", "check", "1.1", status="passed"),
+        _ev(3, "phase_start", "check", "1.2"),
+    )
+    checks = next(p for p in tui_run_state.run_loop_view(records, _profile(tmp_path)).phases if p.name == "checks")
+    assert checks.state == "running"
+    assert checks.detail == ""
+
+
+def test_passing_inner_retry_replaces_previous_check_failure(tmp_path: Path) -> None:
+    records = (
+        _ev(1, "phase_start", "remediate", 1),
+        _ev(2, "check_result", "check", "1.1", status="failed"),
+        _ev(3, "phase_start", "remediate", 1),
+        _ev(4, "phase_start", "check", "1.1"),
+        _ev(5, "check_result", "check", "1.1", status="passed"),
+    )
+    checks = next(p for p in tui_run_state.run_loop_view(records, _profile(tmp_path)).phases if p.name == "checks")
+    assert checks.state == "done"
+    assert checks.detail == "passed"
+
+
+def test_failed_check_result_uses_status_field(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 2),
+        _ev(2, "phase_result", "remediate", 2),
+        _ev(3, "check_result", "test", 2, command="pytest -q", status="failed"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["checks"] == "done"
+    assert details["checks"] == "failed"
+
+
+def test_phase_failure_marks_phase_as_failed(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 2),
+        _ev(2, "phase_result", "remediate", 2),
+        _ev(3, "failure", "remediate", 2, reason="command failed", message="boom"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["remediation"] == "failed"
+    assert details["remediation"] == "command failed"
+
+
+def test_failure_overwrites_running_phase_detail(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "review", 1),
+        _ev(2, "failure", "review", 1, reason="contract invalid"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path, triage=True))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["review"] == "failed"
+    assert details["review"] == "contract invalid"
+
+
+def test_later_passing_check_result_does_not_clear_prior_failure(
+    tmp_path: Path,
+) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 2),
+        _ev(2, "phase_result", "remediate", 2),
+        _ev(3, "check_result", "test", 2, command="pytest -q", status="failed"),
+        _ev(4, "check_result", "test", 2, command="ruff check .", status="passed"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["checks"] == "done"
+    assert details["checks"] == "failed"
+
+
+def test_failed_cleanliness_check_is_visible_without_explicit_pipeline_checks(
+    tmp_path: Path,
+) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 1),
+        _ev(2, "phase_result", "remediate", 1),
+        _ev(3, "check_result", "check", 1, command="git diff --check", status="failed"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path, checks=()))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["checks"] == "done"
+    assert details["checks"] == "failed"
+
+
+def test_inner_retry_counts_repeated_remediate_in_iteration(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 3),
+        _ev(2, "phase_result", "remediate", 3),
+        _ev(3, "check_result", "test", 3, status="failed"),
+        _ev(4, "phase_start", "remediate", 3),
+        _ev(5, "phase_result", "remediate", 3),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path, inner=2))
+
+    assert view.inner_check_retries == 2
+    assert view.inner_retry == 1
+
+
+def test_inner_retry_counts_sub_iteration_labels_as_same_outer_iteration(
+    tmp_path: Path,
+) -> None:
+    events = (
+        _ev(1, "phase_start", "remediate", 1),
+        _ev(2, "check_result", "test", "1.1", status="failed"),
+        _ev(3, "phase_start", "remediate", "1.2"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path, inner=2))
+
+    assert view.iteration == 1
+    assert view.inner_retry == 1
+
+
+def test_new_outer_iteration_resets_prior_phase_states(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "review", 1),
+        _ev(2, "phase_result", "review", 1, status="findings"),
+        _ev(3, "phase_start", "triage", 1),
+        _ev(4, "phase_result", "triage", 1),
+        _ev(5, "phase_start", "remediate", 1),
+        _ev(6, "phase_result", "remediate", 1),
+        _ev(7, "check_result", "test", 1, status="passed"),
+        _ev(8, "phase_start", "review", 2),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path, triage=True, inner=1))
+    states = {phase.name: phase.state for phase in view.phases}
+
+    assert states["review"] == "running"
+    assert states["triage"] == "pending"
+    assert states["remediation"] == "pending"
+    assert states["checks"] == "pending"
+
+
+def test_orphan_check_result_marks_checks_without_remediate_start(
+    tmp_path: Path,
+) -> None:
+    events = (_ev(1, "check_result", "check", "1.1", status="failed"),)
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+    details = {phase.name: phase.detail for phase in view.phases}
+
+    assert states["checks"] == "done"
+    assert details["checks"] == "failed"
+    assert view.iteration == 1
+
+
+def test_string_outer_iteration_change_resets_prior_states(tmp_path: Path) -> None:
+    events = (
+        _ev(1, "phase_start", "review", "1"),
+        _ev(2, "phase_result", "review", "1"),
+        _ev(3, "check_result", "check", "1.1", status="passed"),
+        _ev(4, "phase_start", "review", "2"),
+    )
+    view = tui_run_state.run_loop_view(events, _profile(tmp_path))
+    states = {phase.name: phase.state for phase in view.phases}
+
+    assert view.iteration == 2
+    assert states["review"] == "running"
+    assert states["checks"] == "pending"
+
+
+def test_event_tail_lines_bounded_and_formatted() -> None:
+    events = [_ev(i, "phase_output", "review", 1, text=f"line {i}") for i in range(1, 20)]
+
+    lines = tui_run_state.event_tail_lines(events, limit=5)
+
+    assert len(lines) == 5
+    assert "review" in lines[-1]
+
+
+def test_event_tail_lines_empty() -> None:
+    assert tui_run_state.event_tail_lines(()) == ()
+
+
+def test_unknown_terminal_outcome_is_explained_and_stops_later_work() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "unknown",
+            "stopped_reason": "review_unknown",
+            "duration_seconds": 508.7,
+            "finished_at": "2026-07-13T00:20:24Z",
+            "tokens": {"total": 1_186_486},
+            "model_invocations": [{}, {}, {}, {}],
+            "latest_review_excerpt": "Verification could not run.",
+            "iterations": [
+                {
+                    "iteration": 1,
+                    "review_status": "findings",
+                    "checks": [{"status": "passed"}],
+                    "check_failures": 0,
+                    "commit_status": "committed",
+                },
+                {"iteration": 2, "review_status": "unknown"},
+            ],
+        }
+    )
+
+    assert view.title == "NEEDS ATTENTION"
+    assert view.headline == "Review inconclusive"
+    assert view.explanation == "Verification could not run."
+    assert view.duration == "8m 29s"
+    assert view.telemetry == "4 model calls · 1,186,486 tokens"
+    assert view.retry_review is True
+    assert view.resumable is False
+    assert view.iterations[0].commit == "committed"
+    assert view.iterations[1].remediation == "not run"
+    assert view.iterations[1].checks == "not run"
+    assert view.iterations[1].commit == "not run"
+
+
+def test_iteration_outcome_marks_unsuccessful_phase_markers_as_not_remediated() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "failed",
+            "stopped_reason": "remediation_failed",
+            "iterations": [
+                {"iteration": 1, "review_status": "findings", "triage_failed": True},
+                {
+                    "iteration": 2,
+                    "review_status": "findings",
+                    "suppressed_findings": True,
+                },
+                {
+                    "iteration": 3,
+                    "review_status": "findings",
+                    "remediation_failed": True,
+                },
+            ],
+        }
+    )
+
+    assert [row.remediation for row in view.iterations] == [
+        "skipped",
+        "skipped",
+        "skipped",
+    ]
+
+
+def test_iteration_outcome_marks_missing_remediation_evidence_as_skipped() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "findings",
+            "stopped_reason": "triage_rejected_all",
+            "iterations": [{"iteration": 1, "review_status": "findings"}],
+        }
+    )
+
+    assert view.iterations[0].remediation == "skipped"
+
+
+def test_iteration_outcome_marks_persisted_successful_remediation_done() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "iterations": [{"iteration": 1, "review_status": "findings", "remediated": True}],
+        }
+    )
+
+    assert view.iterations[0].remediation == "done"
+
+
+def test_iteration_outcome_preserves_final_review_label() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "failed",
+            "stopped_reason": "review_failed",
+            "iterations": [{"iteration": "final", "review_failed": True}],
+        }
+    )
+
+    assert view.iterations[0].iteration == "final"
+
+
+def test_iteration_outcome_labels_final_review_remediation_separately() -> None:
+    view = tui_run_state.run_outcome_view(
+        {
+            "final_status": "clear",
+            "stopped_reason": "review_clear",
+            "max_iterations": 3,
+            "iterations": [
+                {
+                    "iteration": 4,
+                    "review_status": "findings",
+                    "final_review_remediation": True,
+                    "remediated": True,
+                    "check_failures": 0,
+                }
+            ],
+        }
+    )
+
+    assert view.iterations[0].iteration == "final recovery 1"
+
+
+def test_timeline_has_wall_time_elapsed_time_and_groups_artifacts() -> None:
+    records = (
+        event_model.Event("r", 1, "phase_start", "review", 1, {}, "2026-07-13T00:00:00Z"),
+        event_model.Event(
+            "r",
+            2,
+            "artifact_write",
+            "artifacts",
+            1,
+            {"path": "a"},
+            "2026-07-13T00:00:02Z",
+        ),
+        event_model.Event(
+            "r",
+            3,
+            "artifact_write",
+            "artifacts",
+            1,
+            {"path": "b"},
+            "2026-07-13T00:00:03Z",
+        ),
+        event_model.Event(
+            "r",
+            4,
+            "phase_result",
+            "review",
+            1,
+            {"status": "unknown"},
+            "2026-07-13T00:00:05Z",
+        ),
+    )
+
+    lines = tui_run_state.timeline_lines(records, local_tz=UTC)
+
+    assert lines[0].startswith("00:00:00  +   0s")
+    assert "ARTIFACTS    2 files written" in lines[1]
+    assert lines[-1].startswith("00:00:05  +   5s")
+    assert "phase result · unknown" in lines[-1]
+    assert not any("0001|" in line for line in lines)

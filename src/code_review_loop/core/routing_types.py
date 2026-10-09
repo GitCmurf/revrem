@@ -95,6 +95,7 @@ class PipelineConfig:
     base: str = "main"
     max_iterations: int = 2
     final_review: bool = True
+    final_review_remediation_passes: int = 0
     checks: tuple[str, ...] = field(default_factory=tuple)
     check_timeout_seconds: float | None = None
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from importlib import import_module
 from types import SimpleNamespace
@@ -19,6 +20,17 @@ cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
+
+
+def test_config_set_help_example_order_preserved():
+    parser = cli_args.build_config_parser()
+    normalized_help = " ".join(parser.format_help().split())
+    assert (
+        "(e.g. description \"Local profile\", review.model gpt-5.5, triage.contract v2, "
+        "triage.routes.codex-midi.model gpt-5, triage.routing.default_route codex-midi, "
+        "triage.routing.enabled true, output.no_tty true, runtime.full_auto off, "
+        "and description \"\", or pipeline.max_iterations 11)." in normalized_help
+    )
 
 
 def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
@@ -421,7 +433,7 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
     editor.write_text(
         "#!/bin/sh\n"
         'printf \'%s\\n\' "$1" > "$EDITOR_LOG"\n'
-        "python -c 'from pathlib import Path; import sys; "
+        f"{shlex.quote(sys.executable)} -c 'from pathlib import Path; import sys; "
         'path = Path(sys.argv[1]); text = path.read_text(encoding="utf-8"); '
         'path.write_text(text.replace("Smoke profile", "Edited profile"), encoding="utf-8")\' "$1"\n',
         encoding="utf-8",
@@ -463,6 +475,54 @@ def test_config_commands_create_show_list_and_delete_profile(tmp_path, monkeypat
 
     assert cli_main.main(["config", "delete", "smoke", "--yes"]) == 0
     assert cli_main.main(["config", "show", "smoke"]) == 1
+
+
+def test_config_set_supports_json_format_before_and_after_subcommand(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    assert cli_main.main(["config", "new", "smoke", "--description", "Smoke profile"]) == 0
+    assert cli_main.main(["config", "set", "smoke", "pipeline.max_iterations", "11"]) == 0
+    assert (
+        f"set pipeline.max_iterations on smoke in {profiles.profile_owner_path('smoke', cwd=tmp_path, home=home)}"
+        in capsys.readouterr().out
+    )
+
+    assert (
+        cli_main.main(
+            ["config", "--format", "json", "set", "smoke", "runtime.provider_retry_attempts", "5"]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "set"
+    assert payload["name"] == "smoke"
+    assert payload["key"] == "runtime.provider_retry_attempts"
+    assert payload["value"] == "5"
+    assert payload["path"] == str(
+        profiles.profile_owner_path("smoke", cwd=tmp_path, home=home)
+    )
+    assert (
+        profiles.resolve_profile("smoke", cwd=tmp_path, home=home).runtime.provider_retry_attempts
+        == 5
+    )
+
+    assert (
+        cli_main.main(
+            ["config", "set", "smoke", "output.no_tty", "true", "--format", "json"]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "set"
+    assert payload["name"] == "smoke"
+    assert payload["key"] == "output.no_tty"
+    assert payload["value"] == "true"
+    assert profiles.resolve_profile("smoke", cwd=tmp_path, home=home).output.no_tty is True
 
 
 def test_config_new_prompts_for_common_fields_when_interactive(tmp_path, monkeypatch, capsys):
@@ -583,6 +643,7 @@ def test_config_import_rejects_missing_source_file(tmp_path, monkeypatch, capsys
 def test_config_list_includes_last_used_from_run_history(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 

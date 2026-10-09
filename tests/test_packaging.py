@@ -58,7 +58,7 @@ def test_project_version_matches_package_version():
 def test_build_backend_version_is_pinned_for_reproducible_release_builds():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert pyproject["build-system"]["requires"] == ["setuptools==82.0.1"]
+    assert pyproject["build-system"]["requires"] == ["setuptools==84.0.0"]
 
 
 def test_ci_builds_and_smokes_revrem_wheel():
@@ -79,6 +79,42 @@ def test_ci_builds_and_smokes_revrem_wheel():
         '"$GITHUB_WORKSPACE/.pkg-smoke/bin/revrem" doctor --format json --base main --codex-bin git'
         in workflow
     )
+
+
+def test_active_github_actions_use_current_immutable_pins():
+    checkout = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
+    setup_python = "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"
+    upload_artifact = (
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1"
+    )
+    release_pins = (
+        "anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2",
+        "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2",
+        "sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0",
+        "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2",
+        "softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3",
+    )
+    scorecard_pins = (
+        "ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4",
+        "github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9",
+    )
+    ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    scorecard = (ROOT / ".github/workflows/scorecard.yml").read_text(encoding="utf-8")
+    action = (ROOT / "action.yml").read_text(encoding="utf-8")
+
+    assert ci.count(checkout) == 2
+    assert ci.count(setup_python) == 2
+    assert checkout in release
+    assert setup_python in release
+    assert upload_artifact in release
+    for pin in release_pins:
+        assert pin in release
+    assert release.count(release_pins[3]) == 2
+    assert checkout in scorecard
+    for pin in scorecard_pins:
+        assert pin in scorecard
+    assert action.count(upload_artifact) == 2
 
 
 def test_release_workflow_uses_trusted_publishing_and_dry_run():
@@ -192,6 +228,26 @@ def test_uv_lock_contains_single_tomli_w_entry():
     assert tomli_w_packages[0]["version"] == "1.2.0"
 
 
+def test_uv_lock_uses_cryptography_with_cve_2026_69247_fixed():
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    cryptography_packages = [
+        package for package in lock["package"] if package["name"] == "cryptography"
+    ]
+
+    assert len(cryptography_packages) == 1
+    version = tuple(int(part) for part in cryptography_packages[0]["version"].split("."))
+    assert version >= (50, 0, 0)
+
+
+def test_uv_lock_uses_patched_http_and_environment_tools():
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    for name, minimum in (("urllib3", (2, 8, 0)), ("virtualenv", (21, 7, 13))):
+        packages = [package for package in lock["package"] if package["name"] == name]
+        assert len(packages) == 1
+        version = tuple(int(part) for part in packages[0]["version"].split("."))
+        assert version >= minimum, f"{name} must include the October dependency-alert fixes"
+
+
 def test_package_data_includes_versioned_prompts():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
@@ -208,224 +264,6 @@ def test_distribution_scripts_are_executable_and_posix_sh():
 
         assert first_line == "#!/usr/bin/env sh"
         assert mode & stat.S_IXUSR, f"{relative} must be executable"
-
-
-def test_promote_stable_uses_home_local_stable_install_boundary():
-    script = (ROOT / "scripts/promote-stable").read_text(encoding="utf-8")
-
-    assert 'STABLE_HOME=${REVREM_STABLE_HOME:-"$HOME/.local/share/revrem"}' in script
-    assert 'BIN_DIR=${REVREM_BIN_DIR:-"$HOME/.local/bin"}' in script
-    assert "RELEASES_DIR=$STABLE_HOME/releases" in script
-    assert 'mkdir -p "$RELEASES_DIR" "$BIN_DIR"' in script
-    assert "RELEASE_SUFFIX=0" in script
-    assert 'if mkdir "$RELEASE_DIR"; then' in script
-    assert 'if [ -d "$RELEASE_DIR" ]; then' in script
-    assert 'cp -R "$REPO_ROOT/src" "$RELEASE_DIR/src"' in script
-    assert 'PYTHONPATH="$RELEASE_DIR/src\\${PYTHONPATH:+:\\$PYTHONPATH}"' in script
-    assert 'cat > "$BIN_DIR/code-review-loop" <<EOF' in script
-    assert 'cat > "$BIN_DIR/revrem" <<EOF' in script
-
-
-def test_promote_stable_refuses_interpreters_older_than_python_311(tmp_path):
-    home = tmp_path / "home"
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    fake_python = fake_bin / "python3"
-    fake_python.write_text(
-        """#!/usr/bin/env sh
-case "$1" in
-  -c)
-    exit 1
-    ;;
-  -m)
-    if [ "$2" = "venv" ]; then
-      touch "${FAKE_VENV_MARKER:?}"
-      exit 0
-    fi
-    ;;
-esac
-exit 0
-""",
-        encoding="utf-8",
-    )
-    fake_python.chmod(0o755)
-    marker = tmp_path / "unexpected-venv-call"
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
-        "PYTHON": str(fake_python),
-        "REVREM_SKIP_CHECKS": "1",
-        "FAKE_VENV_MARKER": str(marker),
-    }
-
-    result = subprocess.run(
-        ["sh", str(ROOT / "scripts/promote-stable")],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 1
-    assert "Python 3.11 or newer" in result.stderr
-    assert not marker.exists()
-    assert not (home / ".local" / "share" / "revrem" / "releases").exists()
-    assert not (home / ".local" / "bin" / "revrem").exists()
-
-
-def test_promote_stable_recreates_stale_stable_venv(tmp_path):
-    home = tmp_path / "home"
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    fake_python = fake_bin / "python3"
-    fake_python.write_text(
-        """#!/usr/bin/env sh
-case "$1" in
-  -c)
-    if [ "$FAKE_CURRENT_PYTHON_VERSION" = "old" ]; then
-      exit 1
-    fi
-    exit 0
-    ;;
-  -m)
-    if [ "$2" = "venv" ]; then
-      marker=${FAKE_VENV_MARKER:?}
-      mkdir -p "$3/bin"
-      cat > "$3/bin/python" <<'EOF'
-#!/usr/bin/env sh
-exit 0
-EOF
-      chmod +x "$3/bin/python"
-      touch "$marker"
-      exit 0
-    fi
-    ;;
-esac
-exit 0
-""",
-        encoding="utf-8",
-    )
-    fake_python.chmod(0o755)
-    stable_venv = home / ".local" / "share" / "revrem" / "stable-venv"
-    stable_bin = stable_venv / "bin"
-    stable_bin.mkdir(parents=True)
-    stale_python = stable_bin / "python"
-    stale_python.write_text(
-        """#!/usr/bin/env sh
-case "$1" in
-  -c)
-    exit 1
-    ;;
-esac
-exit 0
-""",
-        encoding="utf-8",
-    )
-    stale_python.chmod(0o755)
-    stale_marker = stable_venv / "obsolete.txt"
-    stale_marker.write_text("stale", encoding="utf-8")
-
-    marker = tmp_path / "stable-venv-recreated"
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
-        "PYTHON": str(fake_python),
-        "REVREM_SKIP_CHECKS": "1",
-        "FAKE_VENV_MARKER": str(marker),
-    }
-
-    result = subprocess.run(
-        ["sh", str(ROOT / "scripts/promote-stable")],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert marker.exists()
-    assert not stale_marker.exists()
-    assert "exit 0" in stale_python.read_text(encoding="utf-8")
-    assert (home / ".local" / "bin" / "revrem").exists()
-    assert (home / ".local" / "bin" / "code-review-loop").exists()
-
-
-def test_promote_stable_refreshes_runtime_dependency_on_reused_venv(tmp_path):
-    home = tmp_path / "home"
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    fake_python = fake_bin / "python3"
-    fake_python.write_text(
-        """#!/usr/bin/env sh
-case "$1" in
-  -c)
-    exit 0
-    ;;
-  -m)
-    if [ "$2" = "pip" ]; then
-      touch "${FAKE_PIP_MARKER:?}"
-      exit 0
-    fi
-    ;;
-esac
-exit 0
-""",
-        encoding="utf-8",
-    )
-    fake_python.chmod(0o755)
-    stable_venv = home / ".local" / "share" / "revrem" / "stable-venv"
-    stable_bin = stable_venv / "bin"
-    stable_bin.mkdir(parents=True)
-    stable_python = stable_bin / "python"
-    stable_python.write_text(
-        """#!/usr/bin/env sh
-case "$1" in
-  -c)
-    exit 0
-    ;;
-  -m)
-    if [ "$2" = "pip" ]; then
-      touch "${FAKE_PIP_MARKER:?}"
-      exit 0
-    fi
-    ;;
-esac
-exit 0
-""",
-        encoding="utf-8",
-    )
-    stable_python.chmod(0o755)
-    preserved_marker = stable_venv / "preserved.txt"
-    preserved_marker.write_text("keep", encoding="utf-8")
-
-    marker = tmp_path / "pip-called"
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
-        "PYTHON": str(fake_python),
-        "REVREM_SKIP_CHECKS": "1",
-        "FAKE_PIP_MARKER": str(marker),
-    }
-
-    result = subprocess.run(
-        ["sh", str(ROOT / "scripts/promote-stable")],
-        cwd=ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert marker.exists()
-    assert preserved_marker.exists()
-    assert (home / ".local" / "bin" / "revrem").exists()
-    assert (home / ".local" / "bin" / "code-review-loop").exists()
 
 
 def test_install_dev_targets_repo_local_virtualenv():

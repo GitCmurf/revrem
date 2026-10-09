@@ -13,12 +13,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from code_review_loop import (
+    artifacts,
     harnesses,
     policy,
     prompts_composer,
     provider_failures,
     routing_timeouts,
 )
+from code_review_loop.adapters import git as git_adapter
 from code_review_loop.adapters import phase_support
 from code_review_loop.core.ports import (
     CommandResult,
@@ -58,12 +60,16 @@ def build_remediation_command(
             harness=harness,
             role="remediation",
             executable=phase_support._resolve_executable(harness, config),
+            cwd=config.cwd,
             model=model,
             reasoning_effort=reasoning_effort,
             sandbox=sandbox,
             color=config.exec_color,
             full_auto=config.full_auto,
-            json_output=config.exec_json,
+            json_output=(
+                config.exec_json
+                and harnesses._resolve_catalog_driver(harness, cwd=config.cwd) == "codex"
+            ),
             output_last_message_path=output_last_message,
         )
     )
@@ -89,12 +95,31 @@ def run_remediation(
         if config.output_last_message
         else None
     )
-    command = build_remediation_command(config, last_message_path, resolved_route=resolved_route)
-    remediation_harness = resolved_route.harness if resolved_route else config.remediation_harness
+    command = build_remediation_command(
+        config, last_message_path, resolved_route=resolved_route
+    )
+    remediation_harness = (
+        resolved_route.harness if resolved_route else config.remediation_harness
+    )
+    remediation_driver = harnesses._resolve_catalog_driver(
+        remediation_harness, cwd=config.cwd
+    )
+    remediation_model = (
+        (resolved_route.model if resolved_route else None)
+        or config.remediation_model
+        or config.model
+    )
+    remediation_reasoning_effort = (
+        (resolved_route.reasoning_effort if resolved_route else None)
+        or config.remediation_reasoning_effort
+        or config.reasoning_effort
+    )
 
     if resolved_route:
         prompt = remediation_input
-        timeout = routing_timeouts.effective_route_timeout_seconds(config, resolved_route)
+        timeout = routing_timeouts.effective_route_timeout_seconds(
+            config, resolved_route
+        )
         timeout_is_effective = True
     else:
         prompt = f"{phase_support.DEFAULT_REMEDIATION_PROMPT}\n{prompts_composer.trim_for_prompt(remediation_input, config.max_remediation_input_chars)}"
@@ -107,13 +132,17 @@ def run_remediation(
         command,
         prompt,
         prompt_artifact_path=prompt_artifact_path,
+        cwd=config.cwd,
     )
     command = invocation.command
     prompt_input = invocation.stdin
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
+    repository_head_before = _repository_head_for_guard(config)
 
     phase_support.set_phase_terminal_title(config, "remediate", label)
-    phase_support.ensure_model_budget(config, phase="remediate", iteration=iteration, ctx=ctx)
+    phase_support.ensure_model_budget(
+        config, phase="remediate", iteration=iteration, ctx=ctx
+    )
     phase_support.progress_event(
         config,
         "remediate",
@@ -122,12 +151,8 @@ def run_remediation(
         phase_support.resolved_phase_detail(
             command,
             harness=remediation_harness,
-            model=(resolved_route.model if resolved_route else None)
-            or config.remediation_model
-            or config.model,
-            reasoning_effort=(resolved_route.reasoning_effort if resolved_route else None)
-            or config.remediation_reasoning_effort
-            or config.reasoning_effort,
+            model=remediation_model,
+            reasoning_effort=remediation_reasoning_effort,
             timeout_seconds=(
                 routing_timeouts.effective_route_timeout_display(config, resolved_route)
                 if resolved_route
@@ -139,6 +164,7 @@ def run_remediation(
                 if resolved_route
                 else config.phase_config_sources.get("remediation", "direct-config")
             ),
+            cwd=config.cwd,
             prompt_chars=prompt_metadata.get("prompt_chars"),
             prompt_delivery=prompt_metadata["prompt_delivery"],
         ),
@@ -162,6 +188,9 @@ def run_remediation(
             ctx=ctx,
             prompt_artifact=invocation.prompt_artifact,
             harness=remediation_harness,
+            driver=remediation_driver,
+            model=remediation_model,
+            reasoning_effort=remediation_reasoning_effort,
             timeout_is_effective=timeout_is_effective,
         )
     phase_support.write_artifact(
@@ -171,8 +200,40 @@ def run_remediation(
     phase_support.record_model_charge(
         config, result, phase="remediate", iteration=iteration, ctx=ctx
     )
+    repository_head_after = _repository_head_for_guard(config)
+    if repository_head_before != repository_head_after and (
+        repository_head_before is not None or repository_head_after is not None
+    ):
+        diagnostic_path = artifacts.write_json_artifact(
+            config.artifact_dir,
+            f"diagnostics-{artifact_stem}-failure.json",
+            {
+                "kind": "remediation_head_changed",
+                "phase": "remediate",
+                "iteration": label,
+                "head_before": repository_head_before,
+                "head_after": repository_head_after,
+                "message": "Repository HEAD changed during the remediation phase.",
+            },
+        )
+        detail = "provider changed HEAD outside RevRem's commit phase"
+        phase_support.progress_event(
+            config,
+            "remediate",
+            label,
+            "failed",
+            detail,
+            ctx=ctx,
+            metadata={
+                "reason": "remediation_head_changed",
+                "diagnostic_artifact": str(diagnostic_path),
+            },
+        )
+        raise RuntimeError(f"{detail}; see {diagnostic_path}")
     if result.returncode != 0:
-        failure = provider_failures.classify_provider_failure(result, harness=remediation_harness)
+        failure = provider_failures.classify_provider_failure(
+            result, harness=remediation_harness
+        )
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
@@ -191,6 +252,12 @@ def run_remediation(
     return result
 
 
+def _repository_head_for_guard(config: LoopConfig) -> str | None:
+    if config.dry_run or phase_support.lexical_git_repo_root(config.cwd) is None:
+        return None
+    return git_adapter.git_preflight_stdout(config.cwd, ["rev-parse", "HEAD"])
+
+
 def _run_remediation_with_retry(
     config: LoopConfig,
     runner: Runner,
@@ -202,6 +269,9 @@ def _run_remediation_with_retry(
     ctx: RunContext,
     prompt_artifact: Path | None,
     harness: str,
+    driver: str | None = None,
+    model: str | None,
+    reasoning_effort: str | None,
     timeout_is_effective: bool = False,
 ) -> CommandResult:
     """Run the remediation subprocess with bounded transient retry.
@@ -211,10 +281,15 @@ def _run_remediation_with_retry(
     Non-transient provider failures (auth, quota, contract) and any failure
     on the codex or fake harness still raise on the first attempt.
     """
-    attempts = 1 if harness in {"codex", "fake"} else max(1, config.provider_retry_attempts)
+    driver = driver or harnesses._resolve_catalog_driver(harness, cwd=config.cwd)
+    attempts = (
+        1 if driver in {"codex", "fake"} else max(1, config.provider_retry_attempts)
+    )
     last_result: CommandResult | None = None
     effective_timeout = (
-        timeout if timeout_is_effective else phase_support.phase_timeout_seconds(config, timeout)
+        timeout
+        if timeout_is_effective
+        else phase_support.phase_timeout_seconds(config, timeout)
     )
     for attempt in range(1, attempts + 1):
         result = phase_support.run_with_waiting_progress(
@@ -228,6 +303,9 @@ def _run_remediation_with_retry(
             label=label,
             ctx=ctx,
             prompt_artifact=prompt_artifact,
+            harness=harness,
+            model=model,
+            reasoning_effort=reasoning_effort,
         )
         last_result = result
         failure = provider_failures.classify_provider_failure(result, harness=harness)
@@ -258,7 +336,9 @@ class RemediationAdapter:
     def __init__(self, config: LoopConfig) -> None:
         self._config = config
 
-    def execute(self, request: RemediationRequest, ctx: RunContext) -> RemediationOutcome:
+    def execute(
+        self, request: RemediationRequest, ctx: RunContext
+    ) -> RemediationOutcome:
         result = run_remediation(
             self._config,
             ctx.runner,

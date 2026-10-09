@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from importlib import import_module
 
+import pytest
+
 import tests.support.application_runner as runner_mod
 from code_review_loop import application as application_mod
 from code_review_loop import profiles, reporting
@@ -16,6 +18,57 @@ cli_main = import_module("code_review_loop.cli.main")
 config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
+
+
+def test_profile_snapshot_is_exact_and_cli_overrides_it(tmp_path):
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.pipeline]\nbase='ambient'\n", encoding="utf-8"
+    )
+    snapshot = tmp_path / "snapshot.toml"
+    snapshot.write_text(
+        "[profiles.demo.pipeline]\nbase='snapshot'\nmax_iterations=3\n",
+        encoding="utf-8",
+    )
+    parsed = cli_args.parse_args(
+        ["--profile", "demo", "--profile-snapshot", str(snapshot), "--base", "cli"]
+    )
+
+    config, _summary_format = config_builder.build_loop_config(
+        parsed, tmp_path, require_implemented=False
+    )
+
+    assert config.base == "cli"
+    assert config.max_iterations == 3
+
+
+def test_profile_snapshot_requires_matching_profile(tmp_path):
+    snapshot = tmp_path / "snapshot.toml"
+    snapshot.write_text("[profiles.other]\n", encoding="utf-8")
+    parsed = cli_args.parse_args(["--profile", "demo", "--profile-snapshot", str(snapshot)])
+
+    with pytest.raises(ValueError, match="does not define profile 'demo'"):
+        config_builder.build_loop_config(parsed, tmp_path, require_implemented=False)
+
+
+def test_gemini_snapshot_without_an_explicit_cap_uses_model_default(tmp_path):
+    snapshot = tmp_path / "snapshot.toml"
+    snapshot.write_text(
+        "[profiles.demo.review]\nharness='gemini'\nmodel='gemini-3.1-pro-preview'\n",
+        encoding="utf-8",
+    )
+    parsed = cli_args.parse_args(
+        ["--profile", "demo", "--profile-snapshot", str(snapshot), "--dry-run"]
+    )
+
+    config, _ = config_builder.build_loop_config(parsed, tmp_path)
+
+    from code_review_loop.config import DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+
+    assert config.external_review_input_chars == DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+    assert (
+        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
+        == "model-default"
+    )
 
 
 def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResult:
@@ -113,9 +166,7 @@ def test_no_tty_round_trips_through_profile_from_loop_config(tmp_path):
         artifact_dir=tmp_path / "artifacts",
         no_tty=True,
     )
-    saved = config_builder.profile_from_loop_config(
-        "saved", config, summary_format="json"
-    )
+    saved = config_builder.profile_from_loop_config("saved", config, summary_format="json")
     assert saved.output.no_tty is True
 
 
@@ -442,6 +493,32 @@ external_review_input_chars = 80000
     )
 
 
+def test_gemini_alias_uses_resolved_driver_for_model_default(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        "[[harness]]\nname = 'team-gemini'\ndriver = 'gemini'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".revrem.toml").write_text(
+        "[profiles.demo.review]\nharness = 'team-gemini'\nmodel = 'gemini-3.1-pro-preview'\n",
+        encoding="utf-8",
+    )
+
+    args = cli_args.parse_args(["--profile", "demo", "--dry-run"])
+    config, _ = config_builder.build_loop_config(args, tmp_path)
+
+    from code_review_loop.config import DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+
+    assert config.review_harness == "team-gemini"
+    assert config.external_review_input_chars == DEFAULT_GEMINI_PRO_REVIEW_INPUT_CHARS
+    assert (
+        config.phase_config_field_sources["runtime"]["external_review_input_chars"]
+        == "model-default"
+    )
+
+
 def test_external_review_truncation_policy_cli_overrides_profile(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
@@ -688,6 +765,32 @@ output_last_message = false
     assert config.final_review is True
 
 
+def test_main_can_override_final_review_remediation_passes(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    captured_configs = []
+
+    def fake_run_loop(config):
+        captured_configs.append(config)
+        return _clear_result(
+            {
+                "artifact_dir": str(config.artifact_dir),
+                "final_status": "clear",
+                "stopped_reason": "review_clear",
+                "iterations": [],
+            }
+        )
+
+    monkeypatch.setattr(application_mod, "run_review_loop", fake_run_loop)
+
+    exit_code = cli_main.main(["--final-review-remediation-passes", "2", "--dry-run"])
+
+    assert exit_code == 0
+    assert captured_configs[0].final_review_remediation_passes == 2
+
+
 def test_main_can_disable_profile_commit_with_negative_flag(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
@@ -900,6 +1003,31 @@ def test_main_rejects_codex_triage_minimal_reasoning_effort(tmp_path, monkeypatc
             "--triage",
             "--triage-harness",
             "codex",
+            "--triage-reasoning-effort",
+            "minimal",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "Codex triage cannot use reasoning effort 'minimal'" in capsys.readouterr().err
+
+
+def test_main_rejects_minimal_effort_for_codex_triage_harness_alias(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".revrem-catalog.toml").write_text(
+        '[[harness]]\nname="team-codex"\ndriver="codex"\n', encoding="utf-8"
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--triage",
+            "--triage-harness",
+            "team-codex",
             "--triage-reasoning-effort",
             "minimal",
             "--dry-run",
@@ -1477,3 +1605,188 @@ def test_routing_override_requires_v2_contract(tmp_path, monkeypatch):
     exit_code = cli_main.main(["--routing", "--dry-run"])
 
     assert exit_code == 1
+
+
+def test_validate_model_selections_skips_triage_and_routes_when_triage_disabled(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    def fake_validate_selection(harness, model, effort, cwd):
+        calls.append((harness, model, effort))
+        return None
+
+    monkeypatch.setattr(
+        cli_main,
+        "validate_selection",
+        fake_validate_selection,
+    )
+    config = LoopConfig(
+        cwd=tmp_path,
+        review_harness="codex",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        remediation_model="remediation-model",
+        remediation_reasoning_effort="low",
+        triage_enabled=False,
+        triage_model="triage-model",
+        triage_reasoning_effort="low",
+        commit_after_remediation=False,
+        commit_message_harness="gemini",
+        commit_message_model="commit-model",
+        commit_reasoning_effort="high",
+        profile_v2=profiles.Profile(
+            name="final-pr",
+            triage=profiles.TriageConfig(
+                routes={
+                    "stale": profiles.TriageRouteConfig(
+                        harness="claude",
+                        model="route-model",
+                    )
+                }
+            ),
+        ),
+    )
+
+    cli_main._validate_model_selections(config)
+
+    assert calls == [
+        ("codex", "review-model", "medium"),
+        ("codex", "remediation-model", "low"),
+    ]
+
+
+def test_validate_model_selections_uses_effective_routed_values(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_validate_selection(harness, model, effort, cwd):
+        calls.append((harness, model, effort))
+        return None
+
+    monkeypatch.setattr(cli_main, "validate_selection", fake_validate_selection)
+    config = LoopConfig(
+        cwd=tmp_path,
+        model="gpt-5.6-luna",
+        reasoning_effort="ultra",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        remediation_model=None,
+        remediation_reasoning_effort=None,
+        triage_enabled=True,
+        commit_after_remediation=False,
+        profile_v2=profiles.Profile(
+            name="routed",
+            triage=profiles.TriageConfig(
+                enabled=True,
+                routing=profiles.TriageRoutingConfig(enabled=True),
+                routes={"inherited": profiles.TriageRouteConfig(harness="codex")},
+            ),
+        ),
+    )
+
+    cli_main._validate_model_selections(config)
+
+    assert ("codex", "gpt-5.6-luna", "ultra") in calls
+
+
+def test_validate_model_selections_skips_routing_when_routing_disabled(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_validate_selection(harness, model, effort, cwd):
+        calls.append((harness, model, effort))
+        return None
+
+    monkeypatch.setattr(
+        cli_main,
+        "validate_selection",
+        fake_validate_selection,
+    )
+    config = LoopConfig(
+        cwd=tmp_path,
+        review_harness="codex",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        triage_enabled=True,
+        triage_harness="codex",
+        triage_model="triage-model",
+        triage_reasoning_effort="low",
+        remediation_model="remediation-model",
+        remediation_reasoning_effort="low",
+        commit_after_remediation=False,
+        profile_v2=profiles.Profile(
+            name="final-pr",
+            triage=profiles.TriageConfig(
+                enabled=True,
+                routing=profiles.TriageRoutingConfig(enabled=False),
+                routes={
+                    "stale": profiles.TriageRouteConfig(
+                        harness="codex",
+                        model="route-model",
+                    )
+                },
+            ),
+        ),
+    )
+
+    cli_main._validate_model_selections(config)
+
+    assert calls == [
+        ("codex", "review-model", "medium"),
+        ("codex", "remediation-model", "low"),
+        ("codex", "triage-model", "low"),
+    ]
+
+
+def test_validate_model_selections_only_validates_commit_message_when_enabled(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    def fake_validate_selection(harness, model, effort, cwd):
+        calls.append((harness, model, effort))
+        return None
+
+    monkeypatch.setattr(
+        cli_main,
+        "validate_selection",
+        fake_validate_selection,
+    )
+    config = LoopConfig(
+        cwd=tmp_path,
+        review_harness="codex",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        remediation_model="remediation-model",
+        remediation_reasoning_effort="low",
+        commit_after_remediation=False,
+        commit_message_harness="codex",
+        commit_message_model="commit-model",
+        commit_reasoning_effort="high",
+        triage_enabled=False,
+    )
+    cli_main._validate_model_selections(config)
+    assert calls == [
+        ("codex", "review-model", "medium"),
+        ("codex", "remediation-model", "low"),
+    ]
+
+    calls[:] = []
+    config = LoopConfig(
+        cwd=tmp_path,
+        review_harness="codex",
+        review_model="review-model",
+        review_reasoning_effort="medium",
+        remediation_model="remediation-model",
+        remediation_reasoning_effort="low",
+        commit_after_remediation=True,
+        commit_message_harness="codex",
+        commit_message_model="commit-model",
+        commit_reasoning_effort="high",
+        triage_enabled=False,
+    )
+    cli_main._validate_model_selections(config)
+    assert calls == [
+        ("codex", "review-model", "medium"),
+        ("codex", "remediation-model", "low"),
+        ("codex", "commit-model", "high"),
+    ]

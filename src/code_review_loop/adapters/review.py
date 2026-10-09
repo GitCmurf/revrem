@@ -37,9 +37,13 @@ from code_review_loop.core.ports import (
     RunContext,
 )
 from code_review_loop.core.review_interpretation import (
+    actionable_review_output,
     detect_review_status,
+    has_affirmative_issue_prose,
+    has_non_correctness_issue_prose,
     review_status_diagnostics,
 )
+from code_review_loop.git_status import is_artifact_path
 from code_review_loop.redaction import redact_text
 
 if TYPE_CHECKING:
@@ -70,6 +74,7 @@ def build_review_command(config: LoopConfig) -> list[str]:
             harness=config.review_harness,
             role="review",
             executable=phase_support._resolve_executable(config.review_harness, config),
+            cwd=config.cwd,
             base=config.base,
             model=config.review_model or config.model,
             reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
@@ -88,12 +93,14 @@ def run_codex_review(
     ctx: RunContext,
 ) -> tuple[str, CommandResult]:
     display_label = display_label or artifact_label
+    review_harness = config.review_harness
+    review_driver = harnesses._resolve_catalog_driver(review_harness, cwd=config.cwd)
     command = build_review_command(config)
     review_prompt = None
     external_prompt: ExternalReviewPrompt | None = None
     if ctx.git_context_cache is not None:
         ctx.git_context_cache.invalidate_head_sha(str(config.cwd))
-    if config.review_harness not in {"codex", "fake"}:
+    if review_driver not in {"codex", "fake"}:
         review_context = build_external_review_context(
             config, git_context_cache=ctx.git_context_cache
         )
@@ -116,12 +123,16 @@ def run_codex_review(
                         command,
                         harness=config.review_harness,
                         model=config.review_model or config.model,
-                        reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,
+                        reasoning_effort=config.review_reasoning_effort
+                        or config.reasoning_effort,
                         timeout_seconds=config.review_timeout_seconds_display,
                         sandbox="read-only",
-                        source=config.phase_config_sources.get("review", "direct-config"),
+                        source=config.phase_config_sources.get(
+                            "review", "direct-config"
+                        ),
                         prompt_chars=None,
                         prompt_delivery=None,
+                        cwd=config.cwd,
                         prompt_context_chars=external_prompt.context_chars,
                         prompt_truncated=external_prompt.truncated,
                     ),
@@ -129,7 +140,9 @@ def run_codex_review(
                     metadata={
                         "command": phase_support.command_for_progress(list(command)),
                         "harness": config.review_harness,
-                        **external_review_prompt_metadata(external_prompt, config=config),
+                        **external_review_prompt_metadata(
+                            external_prompt, config=config
+                        ),
                     },
                 )
                 phase_support.progress_event(
@@ -157,6 +170,7 @@ def run_codex_review(
                 command,
                 review_prompt,
                 prompt_artifact_path=prompt_artifact_path,
+                cwd=config.cwd,
             )
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
@@ -168,12 +182,15 @@ def run_codex_review(
                 config.review_harness,
                 command,
                 None,
+                cwd=config.cwd,
             )
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
     prompt_metadata = phase_support.prompt_invocation_metadata(invocation)
     phase_support.set_phase_terminal_title(config, "review", display_label)
-    phase_support.ensure_model_budget(config, phase="review", iteration=display_label, ctx=ctx)
+    phase_support.ensure_model_budget(
+        config, phase="review", iteration=display_label, ctx=ctx
+    )
     phase_support.progress_event(
         config,
         "review",
@@ -192,7 +209,10 @@ def run_codex_review(
             prompt_context_chars=(
                 external_prompt.context_chars if external_prompt is not None else None
             ),
-            prompt_truncated=(external_prompt.truncated if external_prompt is not None else None),
+            prompt_truncated=(
+                external_prompt.truncated if external_prompt is not None else None
+            ),
+            cwd=config.cwd,
         ),
         ctx=ctx,
         metadata={
@@ -223,6 +243,8 @@ def run_codex_review(
             review_prompt,
             display_label,
             invocation.prompt_artifact,
+            review_harness=review_harness,
+            review_driver=review_driver,
             ctx=ctx,
         )
     combined = phase_support._combined_output(result)
@@ -231,14 +253,18 @@ def run_codex_review(
     observation = _write_provider_observation(
         config,
         result,
+        review_harness=review_harness,
+        review_driver=review_driver,
         artifact_label=artifact_label,
         display_label=display_label,
     )
     phase_support.record_model_charge(
         config, result, phase="review", iteration=display_label, ctx=ctx
     )
-    if review_failed_to_run(result, config.review_harness):
-        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+    if review_failed_to_run(result, review_harness, cwd=config.cwd):
+        failure = provider_failures.classify_provider_failure(
+            result, harness=review_harness
+        )
         _write_review_failure_diagnostic(
             config,
             result,
@@ -246,6 +272,7 @@ def run_codex_review(
             display_label=display_label,
             artifact_path=artifact_path,
             command=command,
+            review_harness=review_harness,
             failure=failure,
             observation=observation,
         )
@@ -262,9 +289,22 @@ def run_codex_review(
             f"{config.review_harness} review failed for {artifact_label}"
             f"{failure_detail}; see {artifact_path}"
         )
-    status = detect_review_status(combined, harness=config.review_harness)
+    status = detect_review_status(combined, harness=review_driver)
+    empty_comparison = None
+    if status == "unknown" and review_driver == "codex":
+        empty_comparison = confirm_empty_comparison(config, combined)
+        if empty_comparison is not None:
+            status = "clear"
+            artifacts.write_json_artifact(
+                config.artifact_dir,
+                f"diagnostics-{artifact_label}-empty-comparison.json",
+                empty_comparison,
+            )
     if config.debug_status_detection:
-        diagnostics = review_status_diagnostics(combined, harness=config.review_harness)
+        diagnostics = review_status_diagnostics(combined, harness=review_driver)
+        if empty_comparison is not None:
+            diagnostics.update(status="clear", status_source="git_empty_comparison",
+                               status_deciding_signal="git_empty_comparison")
         phase_support.write_artifact(
             config.artifact_dir / f"{artifact_label}-status.json",
             json.dumps(diagnostics, indent=2, sort_keys=True) + "\n",
@@ -282,21 +322,60 @@ def run_codex_review(
     ):
         return status, result
     if status == "findings":
-        phase_support.log_review_summary_line(config, display_label, combined, head="review: ")
+        phase_support.log_review_summary_line(
+            config, display_label, combined, head="review: "
+        )
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     else:
         phase_support.progress_event(config, "review", display_label, status, ctx=ctx)
     return status, result
 
 
+def confirm_empty_comparison(config: LoopConfig, output: str) -> dict[str, object] | None:
+    """Ground a successful Codex no-changes claim in fresh Git state.
+
+    Check all three trees independently: a staged change can be cancelled by an
+    unstaged edit, and a clean worktree can still differ from the merge base.
+    Every Git failure or non-artifact untracked file keeps the result unknown.
+    """
+    text = actionable_review_output(output)
+    if "no changes" not in text.lower():
+        return None
+    if has_affirmative_issue_prose(text) or has_non_correctness_issue_prose(text):
+        return None
+    merge = run_git_preflight(config.cwd, ["merge-base", "HEAD", config.base])
+    if merge.returncode != 0 or not merge.stdout.strip():
+        return None
+    base = merge.stdout.strip()
+    for tree in ([base, "HEAD"], ["--cached", base], [base]):
+        diff = run_git_preflight(
+            config.cwd, ["diff", "--quiet", "--no-ext-diff", "--ignore-submodules=none", *tree, "--"])
+        if diff.returncode != 0:
+            return None
+    # ls-files otherwise scopes to cwd and emits cwd-relative names, while
+    # artifact exclusions are repository-root-relative.
+    untracked = run_git_preflight(config.cwd, [
+        "ls-files", "--others", "--exclude-standard", "--full-name", "-z", "--", ":/",
+    ])
+    if untracked.returncode != 0 or any(
+        path and not is_artifact_path(config, path) for path in untracked.stdout.split("\0")
+    ):
+        return None
+    return {"status": "clear", "status_source": "git_empty_comparison",
+            "merge_base": base, "verified_trees": ["HEAD", "index", "worktree"],
+            "non_artifact_untracked_files": 0}
+
+
 def _write_provider_observation(
     config: LoopConfig,
     result: CommandResult,
     *,
+    review_harness: str,
+    review_driver: str,
     artifact_label: str,
     display_label: str,
 ) -> dict[str, object] | None:
-    if config.review_harness != "codex":
+    if review_driver != "codex":
         return None
     observation = provider_observations.codex_observation(
         result,
@@ -304,7 +383,8 @@ def _write_provider_observation(
         iteration=display_label,
         requested={
             "model": config.review_model or config.model,
-            "reasoning_effort": config.review_reasoning_effort or config.reasoning_effort,
+            "reasoning_effort": config.review_reasoning_effort
+            or config.reasoning_effort,
             "sandbox": "read-only",
         },
     )
@@ -339,6 +419,7 @@ def _write_review_failure_diagnostic(
     display_label: str,
     artifact_path: Path,
     command: Sequence[str],
+    review_harness: str,
     failure: provider_failures.ProviderFailure | None,
     observation: dict[str, object] | None,
 ) -> None:
@@ -367,7 +448,7 @@ def _write_review_failure_diagnostic(
         }
     if observation is not None:
         payload["provider_observation"] = observation
-    retry_command = _codex_review_retry_command(config)
+    retry_command = _codex_review_retry_command(config, review_harness=review_harness)
     if retry_command is not None:
         payload["retry_command"] = retry_command
         payload["redirected_retry_command"] = {
@@ -389,10 +470,12 @@ def _redacted_failure_excerpt(text: str, max_chars: int = 2_000) -> str:
     return prompts_composer.trim_for_prompt(redacted, max_chars)
 
 
-def _codex_review_retry_command(config: LoopConfig) -> list[str] | None:
-    if config.review_harness != "codex":
+def _codex_review_retry_command(
+    config: LoopConfig, *, review_harness: str
+) -> list[str] | None:
+    if harnesses._resolve_catalog_driver(review_harness, cwd=config.cwd) != "codex":
         return None
-    command = [phase_support._resolve_executable("codex", config)]
+    command = [phase_support._resolve_executable(review_harness, config)]
     model = config.review_model or config.model
     reasoning_effort = config.review_reasoning_effort or config.reasoning_effort
     if model:
@@ -450,10 +533,16 @@ def run_review_with_retry(
     display_label: str,
     prompt_artifact: Path | None,
     *,
+    review_harness: str | None = None,
+    review_driver: str | None = None,
     ctx: RunContext,
 ) -> CommandResult:
+    review_harness = review_harness or config.review_harness
+    review_driver = review_driver or harnesses._resolve_catalog_driver(
+        review_harness, cwd=config.cwd
+    )
     attempts = (
-        config.provider_retry_attempts if config.review_harness not in {"codex", "fake"} else 1
+        config.provider_retry_attempts if review_driver not in {"codex", "fake"} else 1
     )
     last_result: CommandResult | None = None
     for attempt in range(1, attempts + 1):
@@ -466,13 +555,16 @@ def run_review_with_retry(
             phase_support.phase_timeout_seconds(config, config.review_timeout_seconds),
             phase="review",
             label=display_label,
+            harness=review_harness,
             ctx=ctx,
             prompt_artifact=prompt_artifact,
         )
         last_result = result
-        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+        failure = provider_failures.classify_provider_failure(
+            result, harness=review_harness
+        )
         if (
-            not review_failed_to_run(result, config.review_harness)
+            not review_failed_to_run(result, review_harness, cwd=config.cwd)
             or failure is None
             or not failure.transient
         ):
@@ -565,7 +657,9 @@ def compose_external_review_prompt(
     )
     prompt = f"{prompt_head}{trimmed_context}{prompt_tail}"
     if len(prompt) > config.external_review_input_chars:
-        prompt = prompts_composer.trim_for_prompt(prompt, config.external_review_input_chars)
+        prompt = prompts_composer.trim_for_prompt(
+            prompt, config.external_review_input_chars
+        )
         actual_head_len = _leading_match_length(prompt, prompt_head)
         actual_tail_len = _trailing_match_length(prompt, prompt_tail)
         if actual_head_len + actual_tail_len <= len(prompt):
@@ -625,9 +719,13 @@ def build_external_review_context(
         diff_name_status = cached_diff_base_head(
             git_context_cache, config.cwd, head_sha, config.base, name_status=True
         )
-        diff_full = cached_diff_base_head(git_context_cache, config.cwd, head_sha, config.base)
+        diff_full = cached_diff_base_head(
+            git_context_cache, config.cwd, head_sha, config.base
+        )
     else:
-        diff_stat = run_git_preflight(config.cwd, ["diff", "--stat", f"{config.base}...HEAD"])
+        diff_stat = run_git_preflight(
+            config.cwd, ["diff", "--stat", f"{config.base}...HEAD"]
+        )
         diff_name_status = run_git_preflight(
             config.cwd, ["diff", "--name-status", f"{config.base}...HEAD"]
         )
@@ -754,7 +852,9 @@ def review_base_hint(config: LoopConfig, base: str) -> str:
         ["rev-parse", "--verify", f"{remote_base}^{{commit}}"],
     )
     if remote_base_result.returncode == 0:
-        remote_merge_base = run_git_preflight(config.cwd, ["merge-base", "HEAD", remote_base])
+        remote_merge_base = run_git_preflight(
+            config.cwd, ["merge-base", "HEAD", remote_base]
+        )
         if remote_merge_base.returncode == 0:
             return (
                 f"Hint: {remote_base!r} does share history with HEAD. "
@@ -763,7 +863,9 @@ def review_base_hint(config: LoopConfig, base: str) -> str:
     return "Use a base branch that shares history with HEAD, or realign the local branch.\n"
 
 
-def review_failed_to_run(result: CommandResult, harness: str) -> bool:
+def review_failed_to_run(
+    result: CommandResult, harness: str, *, cwd: Path | None = None
+) -> bool:
     """Distinguish review invocation failures from review findings.
 
     The ``harness`` argument is a forward-compat hook: it is forwarded to
@@ -782,12 +884,18 @@ def review_failed_to_run(result: CommandResult, harness: str) -> bool:
         return True
     if result.returncode >= 2:
         return True
-    if detect_review_status(phase_support._combined_output(result), harness=harness) in {
+    protocol_harness = harnesses._resolve_catalog_driver(harness, cwd=cwd)
+    if detect_review_status(
+        phase_support._combined_output(result), harness=protocol_harness
+    ) in {
         "clear",
         "findings",
     }:
         return False
-    if provider_failures.classify_provider_failure(result, harness=harness) is not None:
+    if (
+        provider_failures.classify_provider_failure(result, harness=protocol_harness)
+        is not None
+    ):
         return True
 
     stderr = result.stderr.lower()

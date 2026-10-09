@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy as _copy
 import json
 import os
 import re
@@ -11,7 +12,7 @@ import tempfile
 import tomllib
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import asdict, fields, replace
+from dataclasses import asdict, fields, is_dataclass, replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, cast
@@ -42,6 +43,7 @@ from code_review_loop.harnesses import (
     require_implemented_harness,
     validate_harness_name,
 )
+from code_review_loop.model_catalog import KNOWN_EFFORTS
 from code_review_loop.repo_roots import repo_root_or_cwd
 
 USER_CONFIG_RELATIVE = Path(".config") / "revrem" / "profiles.toml"
@@ -49,9 +51,11 @@ PROJECT_CONFIG_NAME = ".revrem.toml"
 TOML_BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 EXEC_SANDBOX_CHOICES = ("read-only", "workspace-write", "danger-full-access")
 EXEC_COLOR_CHOICES = ("always", "never", "auto")
-REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
+
+REASONING_EFFORT_CHOICES = KNOWN_EFFORTS
 PROFILE_KEYS = (
     "description",
+    "replace_inherited_maps",
     "pipeline",
     "review",
     "triage",
@@ -62,10 +66,15 @@ PROFILE_KEYS = (
     "budgets",
     "suppressions",
 )
+REPLACEABLE_INHERITED_MAPS = (
+    "runtime.harness_executables",
+    "triage.routes",
+)
 PIPELINE_KEYS = (
     "base",
     "max_iterations",
     "final_review",
+    "final_review_remediation_passes",
     "checks",
     "check_timeout_seconds",
 )
@@ -117,7 +126,14 @@ ROUTING_THEN_KEYS = (
     "allow_model_deescalation",
     "allow_model_escalation",
 )
-ROUTE_KEYS = ("harness", "model", "reasoning_effort", "timeout_seconds", "sandbox", "fallback")
+ROUTE_KEYS = (
+    "harness",
+    "model",
+    "reasoning_effort",
+    "timeout_seconds",
+    "sandbox",
+    "fallback",
+)
 COMMIT_KEYS = (
     "enabled",
     "harness",
@@ -173,7 +189,7 @@ def _repo_root(cwd: Path) -> Path:
     return repo_root_or_cwd(cwd)
 
 
-def load_profile_file(path: Path) -> ProfileFile:
+def load_profile_file(path: Path, *, catalog_cwd: Path | None = None) -> ProfileFile:
     if not path.is_file():
         return ProfileFile(path=path, profiles={})
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -184,14 +200,17 @@ def load_profile_file(path: Path) -> ProfileFile:
     defaults_raw: dict[str, Any] = {}
     if "defaults" in raw:
         defaults_raw = _table(raw["defaults"], f"{path}:defaults")
-        defaults = parse_profile("<defaults>", defaults_raw, source=str(path))
+        defaults = parse_profile(
+            "<defaults>", defaults_raw, source=str(path), catalog_cwd=catalog_cwd
+        )
     profiles_raw = raw.get("profiles", {})
     profiles_table = _table(profiles_raw, f"{path}:profiles")
     raw_profiles = {
         name: _table(value, f"{path}:profiles.{name}") for name, value in profiles_table.items()
     }
     profiles = {
-        name: parse_profile(name, value, source=str(path)) for name, value in raw_profiles.items()
+        name: parse_profile(name, value, source=str(path), catalog_cwd=catalog_cwd)
+        for name, value in raw_profiles.items()
     }
     return ProfileFile(
         path=path,
@@ -202,19 +221,45 @@ def load_profile_file(path: Path) -> ProfileFile:
     )
 
 
-def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) -> Profile:
+def parse_profile(
+    name: str,
+    raw: dict[str, Any],
+    *,
+    source: str | None = None,
+    catalog_cwd: Path | None = None,
+) -> Profile:
     _reject_unknown_keys(raw, PROFILE_KEYS, f"{name}")
+    replacement_paths = _str_list(
+        raw.get("replace_inherited_maps", ()), f"{name}.replace_inherited_maps"
+    )
+    unknown_replacements = sorted(set(replacement_paths).difference(REPLACEABLE_INHERITED_MAPS))
+    if unknown_replacements:
+        raise ValueError(
+            f"{name}.replace_inherited_maps must contain only: "
+            f"{', '.join(REPLACEABLE_INHERITED_MAPS)}"
+        )
     description = _optional_str(raw.get("description"), f"{name}.description") or ""
     pipeline = parse_pipeline(_table(raw.get("pipeline", {}), f"{name}.pipeline"))
-    review = parse_phase(_table(raw.get("review", {}), f"{name}.review"), f"{name}.review")
-    triage = parse_triage(_table(raw.get("triage", {}), f"{name}.triage"), f"{name}.triage")
+    review = parse_phase(
+        _table(raw.get("review", {}), f"{name}.review"),
+        f"{name}.review",
+        catalog_cwd=catalog_cwd,
+    )
+    triage = parse_triage(
+        _table(raw.get("triage", {}), f"{name}.triage"),
+        f"{name}.triage",
+        catalog_cwd=catalog_cwd,
+    )
     remediation = parse_phase(
         _table(raw.get("remediation", {}), f"{name}.remediation"),
         f"{name}.remediation",
+        catalog_cwd=catalog_cwd,
     )
     output = parse_output(_table(raw.get("output", {}), f"{name}.output"))
-    commit = parse_commit(_table(raw.get("commit", {}), f"{name}.commit"))
-    runtime = parse_runtime(_table(raw.get("runtime", {}), f"{name}.runtime"))
+    commit = parse_commit(_table(raw.get("commit", {}), f"{name}.commit"), catalog_cwd=catalog_cwd)
+    runtime = parse_runtime(
+        _table(raw.get("runtime", {}), f"{name}.runtime"), catalog_cwd=catalog_cwd
+    )
     budgets = parse_budgets(_table(raw.get("budgets", {}), f"{name}.budgets"))
     suppressions = parse_suppressions(_table(raw.get("suppressions", {}), f"{name}.suppressions"))
     profile = Profile(
@@ -231,7 +276,7 @@ def parse_profile(name: str, raw: dict[str, Any], *, source: str | None = None) 
         suppressions=suppressions,
         source=source,
     )
-    validate_profile(profile, require_implemented=False)
+    validate_profile(profile, require_implemented=False, catalog_cwd=catalog_cwd)
     return profile
 
 
@@ -250,20 +295,21 @@ def parse_pipeline(raw: dict[str, Any]) -> PipelineConfig:
         base=_str(raw.get("base", "main"), "pipeline.base"),
         max_iterations=_int(raw.get("max_iterations", 2), "pipeline.max_iterations"),
         final_review=_bool(raw.get("final_review", True), "pipeline.final_review"),
+        final_review_remediation_passes=_int(
+            raw.get("final_review_remediation_passes", 0),
+            "pipeline.final_review_remediation_passes",
+        ),
         checks=tuple(checks),
         check_timeout_seconds=check_timeout_seconds,
     )
 
 
-def parse_phase(raw: dict[str, Any], field: str) -> PhaseConfig:
+def parse_phase(raw: dict[str, Any], field: str, *, catalog_cwd: Path | None = None) -> PhaseConfig:
     _reject_unknown_keys(raw, PHASE_KEYS, field)
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
-    validate_harness_name(harness, field=f"{field}.harness")
+    validate_harness_name(harness, field=f"{field}.harness", cwd=catalog_cwd)
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
-    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
-        )
+    _validate_reasoning_effort(reasoning_effort, f"{field}.reasoning_effort")
     return PhaseConfig(
         harness=harness,
         model=_optional_str(raw.get("model"), f"{field}.model"),
@@ -272,15 +318,14 @@ def parse_phase(raw: dict[str, Any], field: str) -> PhaseConfig:
     )
 
 
-def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
+def parse_triage(
+    raw: dict[str, Any], field: str, *, catalog_cwd: Path | None = None
+) -> TriageConfig:
     _reject_unknown_keys(raw, TRIAGE_KEYS, field)
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
-    validate_harness_name(harness, field=f"{field}.harness")
+    validate_harness_name(harness, field=f"{field}.harness", cwd=catalog_cwd)
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
-    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
-        )
+    _validate_reasoning_effort(reasoning_effort, f"{field}.reasoning_effort")
     on_invalid = _str(raw.get("on_invalid", "continue"), f"{field}.on_invalid")
     if on_invalid not in TRIAGE_ON_INVALID_CHOICES:
         raise ValueError(
@@ -295,7 +340,11 @@ def parse_triage(raw: dict[str, Any], field: str) -> TriageConfig:
     )
     routes_raw = _table(raw.get("routes", {}), f"{field}.routes")
     routes = {
-        name: parse_triage_route(_table(value, f"{field}.routes.{name}"), f"{field}.routes.{name}")
+        name: parse_triage_route(
+            _table(value, f"{field}.routes.{name}"),
+            f"{field}.routes.{name}",
+            catalog_cwd=catalog_cwd,
+        )
         for name, value in routes_raw.items()
     }
 
@@ -332,7 +381,8 @@ def parse_triage_routing(raw: dict[str, Any], field: str) -> TriageRoutingConfig
         mode=mode,
         default_route=_str(raw.get("default_route", "midtier-coder"), f"{field}.default_route"),
         strict_on_unavailable_route=_bool(
-            raw.get("strict_on_unavailable_route", True), f"{field}.strict_on_unavailable_route"
+            raw.get("strict_on_unavailable_route", True),
+            f"{field}.strict_on_unavailable_route",
         ),
         rule=rules,
         allow_model_escalation=_bool(
@@ -402,7 +452,8 @@ def parse_triage_routing_rule_then(raw: dict[str, Any], field: str) -> TriageRou
             _str_list(raw.get("prompt_fragments", []), f"{field}.prompt_fragments")
         ),
         allow_model_deescalation=_bool(
-            raw.get("allow_model_deescalation", True), f"{field}.allow_model_deescalation"
+            raw.get("allow_model_deescalation", True),
+            f"{field}.allow_model_deescalation",
         ),
         allow_model_escalation=_optional_bool(
             raw.get("allow_model_escalation"), f"{field}.allow_model_escalation"
@@ -410,15 +461,14 @@ def parse_triage_routing_rule_then(raw: dict[str, Any], field: str) -> TriageRou
     )
 
 
-def parse_triage_route(raw: dict[str, Any], field: str) -> TriageRouteConfig:
+def parse_triage_route(
+    raw: dict[str, Any], field: str, *, catalog_cwd: Path | None = None
+) -> TriageRouteConfig:
     _reject_unknown_keys(raw, ROUTE_KEYS, field)
     harness = _str(raw.get("harness", "codex"), f"{field}.harness")
-    validate_harness_name(harness, field=f"{field}.harness")
+    validate_harness_name(harness, field=f"{field}.harness", cwd=catalog_cwd)
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), f"{field}.reasoning_effort")
-    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            f"{field}.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
-        )
+    _validate_reasoning_effort(reasoning_effort, f"{field}.reasoning_effort")
     sandbox = _str(raw.get("sandbox", "workspace-write"), f"{field}.sandbox")
     if sandbox not in EXEC_SANDBOX_CHOICES:
         raise ValueError(f"{field}.sandbox must be one of {', '.join(EXEC_SANDBOX_CHOICES)}")
@@ -439,15 +489,12 @@ def _str_list(value: Any, field: str) -> list[str]:
     return list(value)
 
 
-def parse_commit(raw: dict[str, Any]) -> CommitConfig:
+def parse_commit(raw: dict[str, Any], *, catalog_cwd: Path | None = None) -> CommitConfig:
     _reject_unknown_keys(raw, COMMIT_KEYS, "commit")
     harness = _str(raw.get("harness", "codex"), "commit.harness")
-    validate_harness_name(harness, field="commit.harness")
+    validate_harness_name(harness, field="commit.harness", cwd=catalog_cwd)
     reasoning_effort = _optional_str(raw.get("reasoning_effort"), "commit.reasoning_effort")
-    if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            f"commit.reasoning_effort must be one of {', '.join(REASONING_EFFORT_CHOICES)}"
-        )
+    _validate_reasoning_effort(reasoning_effort, "commit.reasoning_effort")
     on_hook_failure = _str(raw.get("on_hook_failure", "remediate"), "commit.on_hook_failure")
     if on_hook_failure not in COMMIT_ON_HOOK_FAILURE_CHOICES:
         raise ValueError(
@@ -487,14 +534,18 @@ def parse_output(raw: dict[str, Any]) -> OutputConfig:
     )
 
 
-def parse_runtime(raw: dict[str, Any]) -> RuntimeConfig:
+def parse_runtime(raw: dict[str, Any], *, catalog_cwd: Path | None = None) -> RuntimeConfig:
     _reject_unknown_keys(raw, RUNTIME_KEYS, "runtime")
     harness_executables = _str_map(
         raw.get("harness_executables", {}),
         "runtime.harness_executables",
     )
     for harness_name in harness_executables:
-        validate_harness_name(harness_name, field=f"runtime.harness_executables.{harness_name}")
+        validate_harness_name(
+            harness_name,
+            field=f"runtime.harness_executables.{harness_name}",
+            cwd=catalog_cwd,
+        )
     return RuntimeConfig(
         codex_bin=_str(raw.get("codex_bin", "codex"), "runtime.codex_bin"),
         harness_executables=harness_executables,
@@ -615,7 +666,10 @@ def resolve_profiles(
 
 
 def load_profile_files(*, cwd: Path, home: Path | None = None) -> tuple[ProfileFile, ProfileFile]:
-    return load_profile_file(user_config_path(home)), load_profile_file(project_config_path(cwd))
+    return (
+        load_profile_file(user_config_path(home), catalog_cwd=cwd),
+        load_profile_file(project_config_path(cwd), catalog_cwd=cwd),
+    )
 
 
 def _load_builtin_profile_raw(name: str) -> dict[str, Any] | None:
@@ -630,9 +684,7 @@ def _load_builtin_profile_raw(name: str) -> dict[str, Any] | None:
     _reject_unknown_keys(raw, TOP_LEVEL_KEYS, f"built-in profile {name}")
     profiles_raw = _table(raw.get("profiles", {}), f"built-in profile {name}:profiles")
     if set(profiles_raw) != {name}:
-        raise ValueError(
-            f"built-in profile {name!r} must define exactly [profiles.{name}]"
-        )
+        raise ValueError(f"built-in profile {name!r} must define exactly [profiles.{name}]")
     raw_profile = _table(profiles_raw[name], f"built-in profile {name}:profiles.{name}")
     # Validate at load time, not import time, so unrelated CLI commands still
     # start if a packaged profile is somehow corrupt.
@@ -671,8 +723,9 @@ def resolve_profile_from_files(
         found = True
     if not found:
         raise FileNotFoundError(f"profile not found: {name}")
-    resolved = parse_profile(name, raw, source=source)
-    validate_profile(resolved, require_implemented=require_implemented)
+    catalog_cwd = project_file.path.parent
+    resolved = parse_profile(name, raw, source=source, catalog_cwd=catalog_cwd)
+    validate_profile(resolved, require_implemented=require_implemented, catalog_cwd=catalog_cwd)
     return resolved
 
 
@@ -682,8 +735,8 @@ def resolve_defaults(
     home: Path | None = None,
     require_implemented: bool = True,
 ) -> Profile:
-    user_file = load_profile_file(user_config_path(home))
-    project_file = load_profile_file(project_config_path(cwd))
+    user_file = load_profile_file(user_config_path(home), catalog_cwd=cwd)
+    project_file = load_profile_file(project_config_path(cwd), catalog_cwd=cwd)
     raw: dict[str, Any] = {}
     source = None
     if user_file.defaults is not None:
@@ -692,8 +745,8 @@ def resolve_defaults(
     if project_file.defaults is not None:
         raw = _deep_merge(raw, project_file.raw_defaults)
         source = str(project_file.path)
-    defaults = parse_profile("<defaults>", raw, source=source)
-    validate_profile(defaults, require_implemented=require_implemented)
+    defaults = parse_profile("<defaults>", raw, source=source, catalog_cwd=cwd)
+    validate_profile(defaults, require_implemented=require_implemented, catalog_cwd=cwd)
     return defaults
 
 
@@ -752,6 +805,26 @@ def builtin_profile_readonly_message(name: str) -> str:
     )
 
 
+def profile_owner_path(
+    name: str,
+    *,
+    cwd: Path,
+    home: Path | None = None,
+    allow_new: bool = False,
+) -> Path:
+    project_path = project_config_path(cwd)
+    if name in load_profile_file(project_path, catalog_cwd=cwd).profiles:
+        return project_path
+    user_path = user_config_path(home)
+    if name in load_profile_file(user_path, catalog_cwd=cwd).profiles:
+        return user_path
+    if is_builtin_profile(name):
+        raise RuntimeError(builtin_profile_readonly_message(name))
+    if allow_new:
+        return user_path
+    raise FileNotFoundError(f"profile not found: {name}")
+
+
 def merge_profiles(name: str, *profiles: Profile) -> Profile:
     if not profiles:
         raise ValueError("merge_profiles requires at least one profile")
@@ -782,6 +855,35 @@ def profile_to_json(profile: Profile) -> str:
     return json.dumps(profile_to_dict(profile), indent=2, sort_keys=True) + "\n"
 
 
+def profile_runtime_key_explicit(
+    profile_name: str | None,
+    cwd: Path,
+    key: str,
+    *,
+    snapshot_path: str | None = None,
+) -> bool:
+    """Return whether a runtime key was authored rather than defaulted."""
+    try:
+        profile_files: tuple[ProfileFile, ...]
+        if snapshot_path:
+            profile_files = (load_profile_file(Path(snapshot_path)),)
+        else:
+            profile_files = load_profile_files(cwd=cwd)
+    except (OSError, ValueError):
+        return False
+    raw_sections: list[dict[str, object]] = []
+    for profile_file in profile_files:
+        if profile_file.raw_defaults:
+            raw_sections.append(profile_file.raw_defaults)
+        if profile_name and profile_name in profile_file.raw_profiles:
+            raw_sections.append(profile_file.raw_profiles[profile_name])
+    for raw in raw_sections:
+        runtime = raw.get("runtime")
+        if isinstance(runtime, dict) and key in runtime:
+            return True
+    return False
+
+
 def _json_ready(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
@@ -806,11 +908,19 @@ def _profile_last_used_at_by_name(history_path: Path | None = None) -> dict[str,
     return last_used_at_by_name
 
 
-def profile_to_toml(profile: Profile, *, include_wrapper: bool = False) -> str:
+def profile_to_toml(
+    profile: Profile,
+    *,
+    include_wrapper: bool = False,
+    omit_builtin_defaults: bool = False,
+    raw_profile: dict[str, Any] | None = None,
+) -> str:
+    """Serialize a profile, optionally retaining model-aware defaults as implicit."""
     return _profile_to_toml_impl(
         profile,
         root=("profiles", profile.name) if include_wrapper else None,
-        omit_builtin_defaults=False,
+        omit_builtin_defaults=omit_builtin_defaults,
+        raw_profile=raw_profile,
     )
 
 
@@ -823,7 +933,23 @@ def _profile_to_toml_dict(
     raw_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    if profile.description:
+    if raw_profile is not None and "replace_inherited_maps" in raw_profile:
+        result["replace_inherited_maps"] = list(
+            _str_list(
+                raw_profile["replace_inherited_maps"],
+                "replace_inherited_maps",
+            )
+        )
+    explicit_description = raw_profile is not None and "description" in raw_profile
+    if explicit_description or (
+        profile.description
+        and not (
+            omit_reference_defaults
+            and not explicit_description
+            and reference is not None
+            and profile.description == reference.description
+        )
+    ):
         result["description"] = profile.description
     for section_name in (
         "pipeline",
@@ -843,19 +969,23 @@ def _profile_to_toml_dict(
         section_dict: dict[str, Any] = {}
         for key, item in asdict(value).items():
             if item is None:
+                if isinstance(raw_section, dict) and raw_section.get(key) == "":
+                    section_dict[key] = ""
                 continue
-            reference_item = getattr(reference_value, key) if reference_value is not None else None
-            if omit_reference_defaults and reference_value is not None and item == reference_item:
-                continue
-            explicit = isinstance(raw_section, dict) and key in raw_section
-            if omit_builtin_defaults and item == getattr(defaults, key) and not explicit:
-                continue
-
-            # Nested structures (from routing) need deep None removal
-            clean_item = _deep_remove_none(item)
+            clean_item = _profile_toml_value(
+                item,
+                raw=raw_section.get(key) if isinstance(raw_section, dict) else None,
+                defaults=getattr(defaults, key),
+                reference_item=(
+                    _reference_profile_value(getattr(reference_value, key))
+                    if reference_value is not None
+                    else None
+                ),
+                omit_reference_defaults=omit_reference_defaults,
+                omit_builtin_defaults=omit_builtin_defaults,
+            )
             if clean_item is None:
                 continue
-
             if isinstance(clean_item, tuple):
                 section_dict[key] = list(clean_item)
             elif isinstance(clean_item, Decimal):
@@ -865,6 +995,144 @@ def _profile_to_toml_dict(
         if section_dict:
             result[section_name] = section_dict
     return result
+
+
+def _reference_profile_value(value: Any) -> Any:
+    if is_dataclass(value):
+        return asdict(cast(Any, value))
+    return value
+
+
+def _as_raw_dict(value: Any) -> dict[str, Any] | None:
+    if is_dataclass(value):
+        return asdict(cast(Any, value))
+    if isinstance(value, dict):
+        return value
+    return None
+
+
+def _profile_toml_dict(
+    value: dict[str, Any],
+    *,
+    raw: Any,
+    defaults: Any,
+    reference_item: Any,
+    omit_reference_defaults: bool,
+    omit_builtin_defaults: bool,
+) -> dict[str, Any] | None:
+    raw_dict = raw if isinstance(raw, dict) else None
+    defaults_dict = _as_raw_dict(defaults) or {}
+    reference_dict = _as_raw_dict(reference_item) if reference_item is not None else None
+
+    rendered: dict[str, Any] = {}
+    for key, item in value.items():
+        if item is None:
+            if raw_dict is not None and raw_dict.get(key) == "":
+                rendered[key] = ""
+            continue
+        explicit = raw_dict is not None and key in raw_dict
+
+        if (
+            omit_reference_defaults
+            and not explicit
+            and reference_dict is not None
+            and item == reference_dict.get(key)
+        ):
+            continue
+        if omit_builtin_defaults and not explicit and item == defaults_dict.get(key):
+            continue
+
+        rendered_item = _profile_toml_value(
+            item,
+            raw=raw_dict.get(key) if raw_dict is not None else None,
+            defaults=defaults_dict.get(key) if defaults_dict is not None else None,
+            reference_item=(reference_dict.get(key) if reference_dict is not None else None),
+            omit_reference_defaults=omit_reference_defaults,
+            omit_builtin_defaults=omit_builtin_defaults,
+        )
+        if rendered_item is None:
+            continue
+        rendered[key] = rendered_item
+
+    if rendered:
+        return rendered
+    if raw_dict is not None:
+        return {}
+    return None
+
+
+def _profile_toml_value(
+    value: Any,
+    *,
+    raw: Any,
+    defaults: Any,
+    reference_item: Any,
+    omit_reference_defaults: bool,
+    omit_builtin_defaults: bool,
+) -> Any | None:
+    if value is None:
+        return None
+    explicit = raw is not None
+    if not explicit:
+        if omit_reference_defaults and reference_item is not None and value == reference_item:
+            return None
+        if omit_builtin_defaults and value == defaults:
+            return None
+    if is_dataclass(value):
+        value = asdict(cast(Any, value))
+    if isinstance(value, dict):
+        return _profile_toml_dict(
+            value,
+            raw=raw,
+            defaults=defaults,
+            reference_item=reference_item,
+            omit_reference_defaults=omit_reference_defaults,
+            omit_builtin_defaults=omit_builtin_defaults,
+        )
+    if isinstance(value, list | tuple):
+        rendered = [
+            _profile_toml_value(
+                item,
+                raw=None,
+                defaults=None,
+                reference_item=None,
+                omit_reference_defaults=False,
+                omit_builtin_defaults=False,
+            )
+            for item in value
+        ]
+        rendered = [item for item in rendered if item is not None]
+        return rendered
+    if isinstance(value, Decimal):
+        return str(value)
+    return value
+
+
+def _merged_profile_raw_for_edit(
+    name: str, *, user_file: ProfileFile, project_file: ProfileFile,
+    exclude_owner: Path | None = None,
+) -> dict[str, Any]:
+    raw: dict[str, Any] = {}
+    if user_file.defaults is not None:
+        raw = _deep_merge(raw, user_file.raw_defaults)
+    if name in user_file.profiles and user_file.path != exclude_owner:
+        raw = _deep_merge(raw, user_file.raw_profiles[name])
+    if project_file.defaults is not None:
+        raw = _deep_merge(raw, project_file.raw_defaults)
+    if name in project_file.profiles and project_file.path != exclude_owner:
+        raw = _deep_merge(raw, project_file.raw_profiles[name])
+    return raw
+
+
+def _merged_default_raw_for_edit(
+    *, user_file: ProfileFile, project_file: ProfileFile
+) -> dict[str, Any]:
+    raw: dict[str, Any] = {}
+    if user_file.raw_defaults is not None:
+        raw = _deep_merge(raw, user_file.raw_defaults)
+    if project_file.raw_defaults is not None:
+        raw = _deep_merge(raw, project_file.raw_defaults)
+    return raw
 
 
 def _deep_remove_none(value: Any) -> Any:
@@ -917,21 +1185,23 @@ def write_project_profile(
     raw_profile: dict[str, Any] | None = None,
 ) -> Path:
     path = project_config_path(cwd)
-    profile_file = load_profile_file(path)
+    profile_file = load_profile_file(path, catalog_cwd=cwd)
     if profile.name in profile_file.profiles and not force:
         raise FileExistsError(f"profile already exists: {profile.name}")
     _write_profile_file(
         path,
         defaults=profile_file.defaults,
-        raw_defaults=profile_file.raw_defaults if profile_file.defaults is not None else None,
+        raw_defaults=(profile_file.raw_defaults if profile_file.defaults is not None else None),
         rendered_profiles={
             profile.name: profile,
         },
-        raw_rendered_profiles={
-            profile.name: raw_profile,
-        }
-        if raw_profile is not None
-        else None,
+        raw_rendered_profiles=(
+            {
+                profile.name: raw_profile,
+            }
+            if raw_profile is not None
+            else None
+        ),
         raw_profiles=profile_file.raw_profiles,
         omit_reference_defaults=False,
         omit_builtin_defaults_for_rendered=False,
@@ -945,28 +1215,376 @@ def write_profile_to_path(
     *,
     force: bool = False,
     raw_profile: dict[str, Any] | None = None,
+    reference: Profile | None = None,
+    catalog_cwd: Path | None = None,
 ) -> Path:
-    profile_file = load_profile_file(path)
+    profile_file = load_profile_file(path, catalog_cwd=catalog_cwd)
     if profile.name in profile_file.profiles and not force:
         raise FileExistsError(f"profile already exists: {profile.name}")
     if raw_profile is None:
         raw_profile = profile_file.raw_profiles.get(profile.name)
+    elif _contains_none_patch(raw_profile):
+        raw_profile = _apply_profile_patch_with_clears(
+            profile_file.raw_profiles.get(profile.name, {}),
+            raw_profile,
+        )
     _write_profile_file(
         path,
         defaults=profile_file.defaults,
-        raw_defaults=profile_file.raw_defaults if profile_file.defaults is not None else None,
+        raw_defaults=(profile_file.raw_defaults if profile_file.defaults is not None else None),
         rendered_profiles={
             profile.name: profile,
         },
-        raw_rendered_profiles={
-            profile.name: raw_profile,
-        }
-        if raw_profile is not None
-        else None,
+        raw_rendered_profiles=(
+            {
+                profile.name: raw_profile,
+            }
+            if raw_profile is not None
+            else None
+        ),
         raw_profiles=profile_file.raw_profiles,
         omit_reference_defaults=True,
+        reference=reference,
     )
     return path
+
+
+def save_profile_raw(
+    name: str,
+    raw_profile: dict[str, Any],
+    *,
+    cwd: Path,
+    home: Path | None = None,
+) -> Path:
+    user_file, project_file = load_profile_files(cwd=cwd, home=home)
+    merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
+    owner = profile_owner_path(name, cwd=cwd, home=home, allow_new=True)
+    current = load_profile_file(owner, catalog_cwd=cwd).raw_profiles.get(name, {})
+    raw_profile = _materialize_inherited_route_clear_markers(
+        raw_profile,
+        current_profile=current,
+        inherited_profile=_merged_profile_raw_for_edit(
+            name, user_file=user_file, project_file=project_file, exclude_owner=owner
+        ),
+    )
+    merged_updated = _apply_profile_patch_with_clears(merged, raw_profile)
+    edit_reference = parse_profile(name, merged, source="<edit>", catalog_cwd=cwd)
+    merged_raw_profile = _apply_profile_patch_with_clears(current, raw_profile)
+    merged_raw_profile = _materialize_inherited_map_replacements(
+        merged_raw_profile,
+        patch=raw_profile,
+        current_profile=current,
+        inherited_profile=merged,
+        effective_profile=merged_updated,
+    )
+    parsed = parse_profile(
+        name,
+        _deep_merge(merged_updated, merged_raw_profile),
+        source="<edit>",
+        catalog_cwd=cwd,
+    )
+    merged_raw_profile = _materialize_route_edit_context(
+        merged_raw_profile,
+        merged=merged,
+        parsed=parsed,
+    )
+    return write_profile_to_path(
+        owner,
+        parsed,
+        force=True,
+        raw_profile=merged_raw_profile,
+        reference=edit_reference,
+        catalog_cwd=cwd,
+    )
+
+
+def _materialize_inherited_map_replacements(
+    owner_profile: dict[str, Any],
+    *,
+    patch: dict[str, Any],
+    current_profile: dict[str, Any],
+    inherited_profile: dict[str, Any],
+    effective_profile: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist deletions that a normal TOML deep merge would resurrect."""
+    replacements = set(_replacement_paths(current_profile))
+    for dotted_path in REPLACEABLE_INHERITED_MAPS:
+        patch_map = _raw_dotted_mapping(patch, dotted_path)
+        inherited_map = _raw_dotted_mapping(inherited_profile, dotted_path)
+        if any(value is None and key in inherited_map for key, value in patch_map.items()):
+            replacements.add(dotted_path)
+    if not replacements:
+        return owner_profile
+
+    materialized = _copy.deepcopy(owner_profile)
+    materialized["replace_inherited_maps"] = sorted(replacements)
+    for dotted_path in sorted(replacements):
+        _set_raw_dotted_mapping(
+            materialized,
+            dotted_path,
+            _raw_dotted_mapping(effective_profile, dotted_path),
+        )
+    return materialized
+
+
+def _replacement_paths(raw: dict[str, Any]) -> tuple[str, ...]:
+    value = raw.get("replace_inherited_maps", ())
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(
+        item for item in value if isinstance(item, str) and item in REPLACEABLE_INHERITED_MAPS
+    )
+
+
+def _raw_dotted_mapping(raw: dict[str, Any], dotted_path: str) -> dict[str, Any]:
+    value: Any = raw
+    for part in dotted_path.split("."):
+        if not isinstance(value, dict):
+            return {}
+        value = value.get(part)
+    return value if isinstance(value, dict) else {}
+
+
+def _set_raw_dotted_mapping(raw: dict[str, Any], dotted_path: str, value: dict[str, Any]) -> None:
+    cursor = raw
+    parts = dotted_path.split(".")
+    for part in parts[:-1]:
+        child = cursor.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            cursor[part] = child
+        cursor = child
+    cursor[parts[-1]] = _copy.deepcopy(value)
+
+
+def _materialize_inherited_route_clear_markers(
+    raw_profile: dict[str, Any],
+    *,
+    current_profile: dict[str, Any],
+    inherited_profile: dict[str, Any],
+) -> dict[str, Any]:
+    """Preserve clear of inherited route fields as explicit overrides."""
+    routes = raw_profile.get("triage")
+    if not isinstance(routes, dict):
+        return raw_profile
+    routes_delta = routes.get("routes")
+    if not isinstance(routes_delta, dict):
+        return raw_profile
+    current_routes: dict[str, Any] = {}
+    current_triage = current_profile.get("triage")
+    if isinstance(current_triage, dict):
+        current_routes_from_profile = current_triage.get("routes")
+        if isinstance(current_routes_from_profile, dict):
+            current_routes = current_routes_from_profile
+
+    merged = _copy.deepcopy(raw_profile)
+    triage_delta = merged["triage"]
+    if not isinstance(triage_delta, dict):
+        return merged
+    merged_routes = triage_delta.setdefault("routes", {})
+    if not isinstance(merged_routes, dict):
+        merged["triage"]["routes"] = {}
+        merged_routes = merged["triage"]["routes"]
+
+    for route_name, route_delta in merged_routes.items():
+        if not isinstance(route_delta, dict):
+            continue
+        current_route = current_routes.get(route_name)
+        if not isinstance(current_route, dict):
+            current_route = {}
+        inherited_route = _raw_dotted_mapping(inherited_profile, "triage.routes").get(route_name, {})
+        if not isinstance(inherited_route, dict):
+            inherited_route = {}
+        for field, clear_value in (
+            ("model", ""),
+            ("fallback", ""),
+            ("reasoning_effort", ""),
+            # Preserve inherited timeout clearing as an explicit clear marker.
+            # This keeps the inherited route timeout in place instead of forcing
+            # an explicit unbounded (0) override.
+            ("timeout_seconds", None),
+        ):
+            if (
+                field in route_delta
+                and route_delta.get(field) is None
+                and (field not in current_route or field in inherited_route)
+            ):
+                route_delta[field] = clear_value
+    return merged
+
+
+def set_profile_field(
+    name: str,
+    dotted_key: str,
+    value: str,
+    *,
+    cwd: Path,
+    home: Path | None = None,
+) -> Path:
+    owner = profile_owner_path(name, cwd=cwd, home=home)  # raises for builtin/unknown
+    profile_file = load_profile_file(owner, catalog_cwd=cwd)
+    user_file = load_profile_file(user_config_path(home), catalog_cwd=cwd)
+    project_file = load_profile_file(project_config_path(cwd), catalog_cwd=cwd)
+    current = profile_file.raw_profiles.get(name, {})
+    updated = deep_set_raw(current, dotted_key, value)
+    merged = _merged_profile_raw_for_edit(name, user_file=user_file, project_file=project_file)
+    merged_updated = deep_set_raw(merged, dotted_key, value)
+    # Validate routing-sensitive updates against the full inherited profile chain.
+    # Route-table and routing edits both need inherited triage contract/routes for
+    # correct validation and cross-field compatibility checks.
+    parse_profile(name, merged_updated, source="<edit>", catalog_cwd=cwd)
+
+    route_edit = dotted_key.startswith("triage.routes.")
+    routing_edit = dotted_key.startswith("triage.routing.")
+    merged_validation = route_edit or routing_edit
+    parsed: Profile
+    if merged_validation:
+        # Keep inherited triage contract/routing state (especially v2 routing
+        # from defaults/project) while validating the owner-facing route edit.
+        parsed = parse_profile(name, merged_updated, source="<edit>", catalog_cwd=cwd)
+    else:
+        parsed = parse_profile(name, updated, source="<edit>", catalog_cwd=cwd)
+    raw_profile = updated
+    # Enabled routing edits need inherited route rows materialized so the saved
+    # owner profile stays loadable after the inherited context is removed.
+    write_routing_context = parsed.triage.routing.enabled and routing_edit
+    if route_edit or write_routing_context:
+        raw_profile = _materialize_route_edit_context(
+            updated,
+            merged=merged,
+            parsed=parsed,
+            route_names=(
+                (dotted_key[len("triage.routes.") :].split(".", 1)[0],) if route_edit else ()
+            ),
+            include_routing_context=write_routing_context,
+        )
+    edit_reference = parse_profile(name, merged, source="<edit>", catalog_cwd=cwd)
+    parsed_for_write = parse_profile(
+        name,
+        _deep_merge(merged_updated, raw_profile),
+        source="<edit>",
+        catalog_cwd=cwd,
+    )
+    return write_profile_to_path(
+        owner,
+        parsed_for_write,
+        force=True,
+        raw_profile=raw_profile,
+        reference=edit_reference,
+        catalog_cwd=cwd,
+    )
+
+
+def _materialize_route_edit_context(
+    raw_profile: dict[str, Any],
+    *,
+    merged: dict[str, Any],
+    parsed: Profile,
+    route_names: tuple[str, ...] = (),
+    include_routing_context: bool | None = None,
+) -> dict[str, Any]:
+    """Return owner raw that remains loadable after route/routing edits.
+
+    Raw owner fragments are parsed before inherited defaults are merged. If a
+    save writes only ``triage.routes.foo.model`` while inheriting routing
+    metadata or fallback routes, the owner file can become self-invalid. This
+    helper materializes only the route context needed by those edits.
+    """
+    triage_delta = raw_profile.get("triage")
+    if not isinstance(triage_delta, dict):
+        return raw_profile
+    routes_delta = triage_delta.get("routes")
+    routing_delta = triage_delta.get("routing")
+    edited_routes = set(route_names)
+    if isinstance(routes_delta, dict):
+        edited_routes.update(str(name) for name in routes_delta)
+    routing_edit = False
+    edited_default_route: str | None = None
+    if isinstance(routing_delta, dict):
+        routing_edit = True
+        routing_default_route = routing_delta.get("default_route")
+        if isinstance(routing_default_route, str):
+            edited_default_route = routing_default_route
+    write_routing_context = (
+        parsed.triage.routing.enabled and routing_edit
+        if include_routing_context is None
+        else include_routing_context
+    )
+    if not edited_routes and not write_routing_context:
+        return raw_profile
+
+    merged_triage = merged.get("triage")
+    merged_routing: dict[str, Any] | None = None
+    merged_routes: dict[str, Any] | None = None
+    merged_default_route: str | None = None
+    materialized = _copy.deepcopy(raw_profile)
+    if isinstance(merged_triage, dict):
+        merged_routing = merged_triage.get("routing")
+        merged_routes_candidate = merged_triage.get("routes")
+        if isinstance(merged_routes_candidate, dict):
+            merged_routes = merged_routes_candidate
+
+    if merged_routes is None:
+        return materialized
+    effective_routes = merged_routes
+
+    materialized = _copy.deepcopy(raw_profile)
+    triage_raw = materialized.setdefault("triage", {})
+    if not isinstance(triage_raw, dict):
+        triage_raw = {}
+        materialized["triage"] = triage_raw
+
+    if write_routing_context and isinstance(merged_triage, dict):
+        merged_contract = merged_triage.get("contract")
+        if isinstance(merged_contract, str):
+            triage_raw.setdefault("contract", merged_contract)
+
+    if isinstance(merged_routing, dict):
+        merged_default_route = merged_routing.get("default_route")
+        routing_raw = triage_raw.setdefault("routing", {})
+        if not isinstance(routing_raw, dict):
+            routing_raw = {}
+            triage_raw["routing"] = routing_raw
+        if "default_route" not in routing_raw and isinstance(merged_default_route, str):
+            routing_raw["default_route"] = merged_default_route
+
+    routes_raw = triage_raw.setdefault("routes", {})
+    if not isinstance(routes_raw, dict):
+        routes_raw = {}
+        triage_raw["routes"] = routes_raw
+
+    materialized_routes: set[str] = set()
+
+    def _materialize_route(route_name: str) -> None:
+        if route_name in materialized_routes:
+            return
+        materialized_routes.add(route_name)
+
+        inherited_route = effective_routes.get(route_name)
+        if isinstance(inherited_route, dict):
+            existing = routes_raw.get(route_name)
+            if isinstance(existing, dict):
+                routes_raw[route_name] = _deep_merge(_copy.deepcopy(inherited_route), existing)
+            else:
+                routes_raw[route_name] = _copy.deepcopy(inherited_route)
+            route_raw = routes_raw[route_name]
+        else:
+            route_raw = routes_raw.get(route_name)
+            if not isinstance(route_raw, dict):
+                return
+
+        fallback_name = route_raw.get("fallback")
+        if isinstance(fallback_name, str):
+            _materialize_route(fallback_name)
+
+    for route_name in sorted(edited_routes):
+        _materialize_route(route_name)
+    if edited_default_route is None:
+        if isinstance(merged_default_route, str):
+            _materialize_route(merged_default_route)
+    else:
+        _materialize_route(edited_default_route)
+    return materialized
 
 
 def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
@@ -981,7 +1599,7 @@ def delete_user_profile(name: str, *, home: Path | None = None) -> Path:
     _write_profile_file(
         path,
         defaults=profile_file.defaults,
-        raw_defaults=profile_file.raw_defaults if profile_file.defaults is not None else None,
+        raw_defaults=(profile_file.raw_defaults if profile_file.defaults is not None else None),
         rendered_profiles={},
         raw_profiles=raw_profiles,
     )
@@ -1075,7 +1693,10 @@ def _prompt_choice(
         value = input_fn(f"{label} ({choices_text}) [{default}]: ").strip() or default
         if value in choices:
             return value
-        print(f"ERROR: {label.lower()} must be one of: {', '.join(choices)}", file=sys.stderr)
+        print(
+            f"ERROR: {label.lower()} must be one of: {', '.join(choices)}",
+            file=sys.stderr,
+        )
 
 
 def _prompt_timeout(
@@ -1125,7 +1746,12 @@ def minimal_profile(name: str, *, description: str = "") -> Profile:
     return Profile(name=name, description=description)
 
 
-def _walk_route_fallback_chain(routes: dict[str, TriageRouteConfig], route_name: str) -> list[str]:
+def _walk_route_fallback_chain(
+    routes: dict[str, TriageRouteConfig],
+    route_name: str,
+    *,
+    catalog_cwd: Path | None = None,
+) -> list[str]:
     """Return a list of issues for a single route's fallback chain."""
     from code_review_loop import policy
 
@@ -1138,7 +1764,7 @@ def _walk_route_fallback_chain(routes: dict[str, TriageRouteConfig], route_name:
         current_cfg = routes.get(current_route_name)
         if not current_cfg:
             break
-        if not policy.check_route_capabilities(current_cfg):
+        if not policy.check_route_capabilities(current_cfg, cwd=catalog_cwd):
             resolved = True
         if not current_cfg.fallback:
             break
@@ -1158,7 +1784,9 @@ def _walk_route_fallback_chain(routes: dict[str, TriageRouteConfig], route_name:
         if current_route_name not in routes:
             issues.append(f"route {route_name!r} has unknown fallback: {current_route_name!r}")
         else:
-            cap_issues = policy.check_route_capabilities(routes[current_route_name])
+            cap_issues = policy.check_route_capabilities(
+                routes[current_route_name], cwd=catalog_cwd
+            )
             issues.append(
                 f"route {route_name!r} lacks an implemented and compatible fallback chain. "
                 f"Issues for {current_route_name!r}: {'; '.join(cap_issues)}"
@@ -1188,15 +1816,22 @@ def validate_policy(profile: Profile, *, executable_routes: bool = False) -> lis
     return issues
 
 
-def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
+def validate_profile(
+    profile: Profile, *, require_implemented: bool, catalog_cwd: Path | None = None
+) -> None:
     if profile.pipeline.max_iterations < 1:
         raise ValueError("pipeline.max_iterations must be at least 1")
+    if profile.pipeline.final_review_remediation_passes < 0:
+        raise ValueError("pipeline.final_review_remediation_passes must be 0 or greater")
     if (
         profile.pipeline.check_timeout_seconds is not None
         and profile.pipeline.check_timeout_seconds < 0
     ):
         raise ValueError("pipeline.check_timeout_seconds must be 0 or greater")
-    for phase_name, phase in (("review", profile.review), ("remediation", profile.remediation)):
+    for phase_name, phase in (
+        ("review", profile.review),
+        ("remediation", profile.remediation),
+    ):
         if phase.timeout_seconds is not None and phase.timeout_seconds < 0:
             raise ValueError(f"{phase_name}.timeout_seconds must be 0 or greater")
     if profile.triage.timeout_seconds is not None and profile.triage.timeout_seconds < 0:
@@ -1246,25 +1881,33 @@ def validate_profile(profile: Profile, *, require_implemented: bool) -> None:
 
     for route_name, route in profile.triage.routes.items():
         field = f"triage.routes.{route_name}"
-        validate_harness_name(route.harness, field=f"{field}.harness")
+        validate_harness_name(route.harness, field=f"{field}.harness", cwd=catalog_cwd)
         if route.timeout_seconds is not None and route.timeout_seconds < 0:
             raise ValueError(f"{field}.timeout_seconds must be 0 or greater")
         if route.fallback and route.fallback not in profile.triage.routes:
             raise ValueError(f"{field}.fallback refers to unknown route: {route.fallback}")
 
     if require_implemented:
-        require_implemented_harness(profile.review.harness, field="review.harness")
-        require_implemented_harness(profile.remediation.harness, field="remediation.harness")
+        require_implemented_harness(profile.review.harness, field="review.harness", cwd=catalog_cwd)
+        require_implemented_harness(
+            profile.remediation.harness, field="remediation.harness", cwd=catalog_cwd
+        )
         if profile.triage.enabled:
-            require_implemented_harness(profile.triage.harness, field="triage.harness")
+            require_implemented_harness(
+                profile.triage.harness, field="triage.harness", cwd=catalog_cwd
+            )
         if profile.commit.enabled:
-            require_implemented_harness(profile.commit.harness, field="commit.harness")
+            require_implemented_harness(
+                profile.commit.harness, field="commit.harness", cwd=catalog_cwd
+            )
 
         # Only enforce route-chain implementation when routing can actually select routes.
         # Disabled routing may still carry draft or experimental route tables for later use.
         if profile.triage.routing.enabled:
             for route_name in profile.triage.routes:
-                route_issues = _walk_route_fallback_chain(profile.triage.routes, route_name)
+                route_issues = _walk_route_fallback_chain(
+                    profile.triage.routes, route_name, catalog_cwd=catalog_cwd
+                )
                 if route_issues:
                     raise ValueError(route_issues[0])
 
@@ -1278,6 +1921,7 @@ def _write_profile_file(
     raw_rendered_profiles: dict[str, dict[str, Any]] | None = None,
     raw_profiles: dict[str, dict[str, Any]] | None = None,
     omit_reference_defaults: bool = False,
+    reference: Profile | None = None,
     omit_builtin_defaults_for_rendered: bool = True,
 ) -> None:
     blocks: list[str] = []
@@ -1296,7 +1940,7 @@ def _write_profile_file(
                     root=("profiles", name),
                     omit_builtin_defaults=omit_builtin_defaults_for_rendered,
                     omit_reference_defaults=omit_reference_defaults,
-                    reference=defaults,
+                    reference=reference or defaults,
                     raw_profile=(raw_rendered_profiles or {}).get(name),
                 ).rstrip()
             )
@@ -1365,13 +2009,145 @@ def _merge_dataclass(base: Any, override: Any) -> Any:
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    merged = dict(base)
+    merged = _copy.deepcopy(base)
+    for dotted_path in _replacement_paths(override):
+        _delete_raw_dotted(merged, dotted_path)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = _deep_merge(merged[key], value)
         else:
             merged[key] = value
     return merged
+
+
+def _delete_raw_dotted(raw: dict[str, Any], dotted_path: str) -> None:
+    cursor = raw
+    parts = dotted_path.split(".")
+    for part in parts[:-1]:
+        child = cursor.get(part)
+        if not isinstance(child, dict):
+            return
+        cursor = child
+    cursor.pop(parts[-1], None)
+
+
+_INT_SUFFIXES = (
+    ".final_review_remediation_passes",
+    ".inner_check_retries",
+    ".max_iterations",
+    ".max_remediation_input_chars",
+    ".max_tokens",
+    ".external_review_input_chars",
+    ".terminal_excerpt_chars",
+    ".provider_retry_attempts",
+)
+_FLOAT_SUFFIXES = (
+    ".check_timeout_seconds",
+    ".external_review_warning_seconds",
+    ".max_wall_seconds",
+    ".provider_retry_backoff_seconds",
+    ".soft_warn_fraction",
+    ".timeout_seconds",
+)
+# Enumerate bool keys explicitly: triage.routing.default_route is a STRING, so a
+# "triage.routing." prefix match would wrongly coerce it to bool.
+_BOOL_SUFFIXES = (
+    ".enabled",
+    ".final_review",
+    ".strict_on_unavailable_route",
+    ".debug_status_detection",
+    ".quiet_progress",
+    ".terminal_title",
+    ".no_tty",
+    ".exec_json",
+    ".output_last_message",
+    ".full_auto",
+    ".allow_model_escalation",
+    ".allow_model_deescalation",
+)
+
+
+def _coerce_field_value(dotted_key: str, value: object) -> Any:
+    if value is None:
+        return None
+    if dotted_key == "pipeline.checks":
+        if isinstance(value, list | tuple):
+            if all(isinstance(item, str) for item in value):
+                return list(value)
+            raise ValueError("pipeline.checks must be a list of strings")
+        if isinstance(value, str):
+            separators = value.splitlines()
+            if len(separators) == 1:
+                separators = value.split(";")
+            return [item.strip() for item in separators if item.strip()]
+        raise ValueError("pipeline.checks must be a list of strings")
+    raw = value if isinstance(value, str) else str(value)
+    if dotted_key.endswith(_INT_SUFFIXES):
+        try:
+            return int(raw)
+        except ValueError as exc:
+            raise ValueError(f"{dotted_key} must be an integer, got {value!r}") from exc
+    if dotted_key.endswith(_FLOAT_SUFFIXES):
+        try:
+            return float(raw)
+        except ValueError as exc:
+            raise ValueError(f"{dotted_key} must be a number, got {value!r}") from exc
+    if dotted_key.endswith(_BOOL_SUFFIXES):
+        lowered = raw.strip().lower()
+        if lowered in ("true", "1", "yes", "on"):
+            return True
+        if lowered in ("false", "0", "no", "off"):
+            return False
+        raise ValueError(f"{dotted_key} must be a boolean, got {value!r}")
+    return raw
+
+
+def _contains_none_patch(raw_profile: dict[str, Any]) -> bool:
+    for value in raw_profile.values():
+        if value is None:
+            return True
+        if isinstance(value, dict):
+            if _contains_none_patch(value):
+                return True
+        elif isinstance(value, list | tuple) and any(item is None for item in value):
+            return True
+    return False
+
+
+def _apply_profile_patch_with_clears(
+    base: dict[str, Any],
+    patch: dict[str, Any],
+) -> dict[str, Any]:
+    merged = _copy.deepcopy(base)
+    for key, value in patch.items():
+        if value is None:
+            merged.pop(key, None)
+            continue
+        if isinstance(value, dict):
+            current = merged.get(key)
+            if not isinstance(current, dict):
+                current = {}
+            merged[key] = _apply_profile_patch_with_clears(current, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def deep_set_raw(raw: dict[str, Any], dotted_key: str, value: object) -> dict[str, Any]:
+    if not dotted_key:
+        raise ValueError("dotted_key must be non-empty")
+    coerced = _coerce_field_value(dotted_key, value)
+    result = _copy.deepcopy(raw)
+    cursor = result
+    parts = dotted_key.split(".")
+    for part in parts[:-1]:
+        nxt = cursor.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cursor[part] = nxt
+        cursor = nxt
+    cursor[parts[-1]] = coerced
+    return result
 
 
 def _reject_unknown_keys(raw: dict[str, Any], allowed: tuple[str, ...], field: str) -> None:
@@ -1409,6 +2185,16 @@ def _optional_str(value: Any, field: str) -> str | None:
     if value is None:
         return None
     return _str(value, field)
+
+
+def _validate_reasoning_effort(value: str | None, field: str) -> None:
+    # Empty string is the persisted clear marker for an inherited optional
+    # effort and remains falsy at command-resolution call sites.
+    if value is None or value == "":
+        return
+    if value not in KNOWN_EFFORTS:
+        known = ", ".join(KNOWN_EFFORTS)
+        raise ValueError(f"{field} must be one of {known}")
 
 
 def _optional_bool(value: Any, field: str) -> bool | None:

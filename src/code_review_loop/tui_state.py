@@ -109,6 +109,24 @@ class HomeSnapshot:
     run_monitors: tuple[RunMonitorView, ...]
 
 
+def bootstrap_shell_model(cwd: Path) -> TuiShellModel:
+    """Return an I/O-free shell used for the first Textual frame."""
+    snapshot = HomeSnapshot(
+        cwd=str(cwd),
+        profiles=(),
+        recent_runs=(),
+        harnesses=(),
+        run_previews=(),
+        run_monitors=(),
+    )
+    return TuiShellModel(
+        snapshot=snapshot,
+        selected_profile_name=None,
+        selected_launch_plan=None,
+        screens=(),
+    )
+
+
 def build_home_snapshot(
     *,
     cwd: Path,
@@ -159,17 +177,19 @@ def build_shell_model(
     history_limit: int = 5,
     history_path: Path | None = None,
     selected_profile_name: str | None = None,
+    resolved_profiles: tuple[profiles.Profile, ...] | None = None,
 ) -> TuiShellModel:
     # Shell mode uses the same operator-facing profile enumeration as the home
     # screen, so bundled profiles must be available here too.
-    resolved_profiles = tuple(
-        profiles.resolve_profiles(
-            cwd=cwd,
-            home=home,
-            require_implemented=False,
-            include_builtins=True,
+    if resolved_profiles is None:
+        resolved_profiles = tuple(
+            profiles.resolve_profiles(
+                cwd=cwd,
+                home=home,
+                require_implemented=False,
+                include_builtins=True,
+            )
         )
-    )
     snapshot = home_snapshot_for_profiles(
         cwd=cwd,
         resolved_profiles=resolved_profiles,
@@ -177,15 +197,23 @@ def build_shell_model(
         history_path=history_path,
     )
     selected_profile = _select_profile(resolved_profiles, selected_profile_name)
-    plan = launch_plan(selected_profile, dry_run=True) if selected_profile is not None else None
+    plan = (
+        launch_plan(selected_profile, dry_run=True)
+        if selected_profile is not None
+        else None
+    )
     return TuiShellModel(
         snapshot=snapshot,
-        selected_profile_name=(selected_profile.name if selected_profile is not None else None),
+        selected_profile_name=(
+            selected_profile.name if selected_profile is not None else None
+        ),
         selected_launch_plan=plan,
         screens=(
             home_screen(
                 snapshot,
-                selected_profile_name=(selected_profile.name if selected_profile else None),
+                selected_profile_name=(
+                    selected_profile.name if selected_profile else None
+                ),
             ),
             profiles_screen(snapshot),
             pipeline_screen(snapshot, selected_profile),
@@ -211,9 +239,15 @@ def _select_profile(
     return resolved_profiles[0]
 
 
-def home_screen(snapshot: HomeSnapshot, *, selected_profile_name: str | None = None) -> TuiScreen:
-    implemented = ", ".join(h.name for h in snapshot.harnesses if h.implemented) or "none"
-    reserved = ", ".join(h.name for h in snapshot.harnesses if not h.implemented) or "none"
+def home_screen(
+    snapshot: HomeSnapshot, *, selected_profile_name: str | None = None
+) -> TuiScreen:
+    implemented = (
+        ", ".join(h.name for h in snapshot.harnesses if h.implemented) or "none"
+    )
+    reserved = (
+        ", ".join(h.name for h in snapshot.harnesses if not h.implemented) or "none"
+    )
     lines = [
         f"Workspace: {snapshot.cwd}",
         f"Selected profile: {selected_profile_name or 'none'}",
@@ -248,7 +282,9 @@ def profiles_screen(snapshot: HomeSnapshot) -> TuiScreen:
     return TuiScreen(name="profiles", title="Profiles", lines=tuple(lines))
 
 
-def pipeline_screen(snapshot: HomeSnapshot, selected_profile: profiles.Profile | None) -> TuiScreen:
+def pipeline_screen(
+    snapshot: HomeSnapshot, selected_profile: profiles.Profile | None
+) -> TuiScreen:
     if selected_profile is None:
         return TuiScreen(
             name="pipeline",
@@ -317,10 +353,7 @@ def run_monitor_screen(snapshot: HomeSnapshot) -> TuiScreen:
             suffix = " [truncated]" if monitor.events_truncated else ""
             lines.append(f"  events: {len(monitor.events)} loaded{suffix}")
             for event in monitor.events[-4:]:
-                phase = event.phase or event.kind
-                iteration = "" if event.iteration is None else f"|{event.iteration}"
-                detail = f": {event.detail}" if event.detail else ""
-                lines.append(f"    {event.seq:04d}|{phase}{iteration}|{event.kind}{detail}")
+                lines.append(f"    {event_row_text(event)}")
     return TuiScreen(name="run-monitor", title="Run Monitor", lines=tuple(lines))
 
 
@@ -380,7 +413,7 @@ def pipeline_phases(profile: profiles.Profile) -> tuple[PhaseView, ...]:
         phase_view("remediation", True, profile.remediation),
         PhaseView(
             "checks",
-            bool(profile.pipeline.checks),
+            True,
             command_count=len(profile.pipeline.checks),
         ),
         PhaseView(
@@ -507,13 +540,17 @@ def run_monitor_view(record: dict[str, Any]) -> RunMonitorView:
             elif isinstance(value, list):
                 for item in value:
                     if isinstance(item, str):
-                        artifacts.append(artifact_link_view(kind, item, record_cwd=record_cwd))
+                        artifacts.append(
+                            artifact_link_view(kind, item, record_cwd=record_cwd)
+                        )
     event_views, events_truncated, event_error = run_event_views(record)
     return RunMonitorView(
         run_id=str(record.get("run_id") or ""),
         final_status=str(record.get("final_status") or "unknown"),
         stopped_reason=(
-            str(record["stopped_reason"]) if isinstance(record.get("stopped_reason"), str) else None
+            str(record["stopped_reason"])
+            if isinstance(record.get("stopped_reason"), str)
+            else None
         ),
         artifact_dir=str(artifact_dir) if isinstance(artifact_dir, str) else None,
         artifacts=tuple(artifacts),
@@ -523,7 +560,9 @@ def run_monitor_view(record: dict[str, Any]) -> RunMonitorView:
     )
 
 
-def artifact_link_view(kind: str, path: str, *, record_cwd: str | None = None) -> ArtifactLinkView:
+def artifact_link_view(
+    kind: str, path: str, *, record_cwd: str | None = None
+) -> ArtifactLinkView:
     resolved_path = resolve_record_path(path, record_cwd=record_cwd)
     return ArtifactLinkView(kind=kind, path=path, exists=resolved_path.exists())
 
@@ -538,7 +577,20 @@ def run_event_views(
         records, truncated = event_model.read_events(events_path)
     except (ValueError, OSError) as exc:
         return (), False, str(exc)
-    return tuple(run_event_view(event) for event in records), truncated, None
+    return event_views_from_events(records), truncated, None
+
+
+def event_views_from_events(
+    records: tuple[event_model.Event, ...] | list[event_model.Event],
+) -> tuple[RunEventView, ...]:
+    return tuple(run_event_view(event) for event in records)
+
+
+def event_row_text(event: RunEventView) -> str:
+    phase = event.phase or event.kind
+    iteration = "" if event.iteration is None else f"|{event.iteration}"
+    detail = f": {event.detail}" if event.detail else ""
+    return f"{event.seq:04d}|{phase}{iteration}|{event.kind}{detail}"
 
 
 def events_path_for_record(record: dict[str, Any]) -> Path | None:
@@ -551,7 +603,10 @@ def events_path_for_record(record: dict[str, Any]) -> Path | None:
             artifact_dir = artifact_dir_value
     if not isinstance(artifact_dir, str):
         return None
-    return resolve_record_path(artifact_dir, record_cwd=record_cwd) / event_model.EVENTS_FILENAME
+    return (
+        resolve_record_path(artifact_dir, record_cwd=record_cwd)
+        / event_model.EVENTS_FILENAME
+    )
 
 
 def run_event_view(event: event_model.Event) -> RunEventView:

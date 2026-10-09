@@ -14,7 +14,9 @@ from code_review_loop.config import EXTERNAL_REVIEW_TRUNCATION_POLICIES
 
 # Argparse choice tuples shared across parsers. Single source of truth so the
 # parent ``cli`` package re-exports them rather than maintaining duplicates.
-REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
+from code_review_loop.model_catalog import KNOWN_EFFORTS
+
+REASONING_EFFORT_CHOICES = KNOWN_EFFORTS
 PROGRESS_STYLE_CHOICES = ("compact", "verbose", "rich")
 COMMIT_ON_HOOK_FAILURE_CHOICES = profiles.COMMIT_ON_HOOK_FAILURE_CHOICES
 
@@ -56,6 +58,14 @@ def build_run_parser() -> RevRemArgumentParser:
         help="Launch the interactive command-building wizard.",
     )
     parser.add_argument("--profile", default=None, help="Named profile from RevRem TOML config.")
+    parser.add_argument(
+        "--profile-snapshot",
+        default=None,
+        help=(
+            "Load an exact resolved profile from this TOML file. Requires --profile; "
+            "ambient profile files are ignored and CLI options still override it."
+        ),
+    )
     parser.add_argument("--base", default=None, help="Base branch passed to codex review.")
     parser.add_argument(
         "--max-iterations",
@@ -118,7 +128,6 @@ def build_run_parser() -> RevRemArgumentParser:
     )
     parser.add_argument(
         "--reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help=(
             "Optional Codex model_reasoning_effort override for review and remediation; "
@@ -127,20 +136,17 @@ def build_run_parser() -> RevRemArgumentParser:
     )
     parser.add_argument(
         "--review-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help="Optional Codex model_reasoning_effort override for review only.",
     )
     parser.add_argument(
         "--triage-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help="Optional Codex model_reasoning_effort override for triage only.",
     )
     parser.add_argument(
         "--remediation-reasoning-effort",
         "--remediate-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help=(
             "Optional Codex model_reasoning_effort override for remediation only. "
@@ -149,7 +155,6 @@ def build_run_parser() -> RevRemArgumentParser:
     )
     parser.add_argument(
         "--commit-reasoning-effort",
-        choices=REASONING_EFFORT_CHOICES,
         default=None,
         help="Optional Codex model_reasoning_effort override for commit-message drafting only.",
     )
@@ -282,14 +287,14 @@ def build_run_parser() -> RevRemArgumentParser:
         dest="full_auto",
         action="store_true",
         default=None,
-        help="Pass --full-auto to codex exec.",
+        help="Enable provider-supported automatic approval for remediation.",
     )
     full_auto_group.add_argument(
         "--no-full-auto",
         dest="full_auto",
         action="store_false",
         default=None,
-        help="Do not pass --full-auto to codex exec.",
+        help="Disable provider-supported automatic approval for remediation.",
     )
     parser.add_argument(
         "--check",
@@ -372,6 +377,15 @@ def build_run_parser() -> RevRemArgumentParser:
         action="store_false",
         default=None,
         help="Do not run the final review after the last remediation pass.",
+    )
+    parser.add_argument(
+        "--final-review-remediation-passes",
+        type=int,
+        default=None,
+        help=(
+            "Maximum additional remediation/check/final-review cycles after "
+            "final-review findings. Defaults to profile value or 0."
+        ),
     )
     parser.add_argument(
         "--max-remediation-input-chars",
@@ -568,7 +582,17 @@ def build_run_parser() -> RevRemArgumentParser:
         default=None,
         help=(
             "Start by remediating a previous review artifact. Use 'latest' for the newest "
-            "compatible usable non-clear generated review; if none exists, start with a fresh review."
+            "usable unresolved generated review, even after HEAD changes; errors if none exists. "
+            "Add --initial-review-mode compatible to require matching Git state."
+        ),
+    )
+    parser.add_argument(
+        "--initial-review-mode",
+        choices=("explicit", "compatible", "stale"),
+        default=None,
+        help=(
+            "Interpretation mode for --initial-review-file. The wizard uses 'compatible' "
+            "or 'stale' when startup pending-review discovery is accepted."
         ),
     )
     parser.add_argument(
@@ -642,8 +666,58 @@ def build_config_parser() -> RevRemArgumentParser:
     )
     new.add_argument("--force", action="store_true")
 
-    edit = subparsers.add_parser("edit", help="Open the owning config file in $EDITOR.")
+    edit = subparsers.add_parser(
+        "edit",
+        help=(
+            "Open the owning config file in $EDITOR. Invalid edits are rejected and the "
+            "current in-session profile cache is preserved."
+        ),
+    )
     edit.add_argument("name")
+
+    set_parser = subparsers.add_parser(
+        "set",
+        help=(
+            "Set a single profile field non-interactively while preserving inherited "
+            "values from the full user/project profile chain (defaults plus named "
+            "profile overlays) as inherited values "
+            "(not materialized in the owning profile). Explicit values already present "
+            "in the owning profile are retained. Only the requested field is rewritten "
+            "(top-level or dotted), even if it conflicts with an inherited default. "
+            '(e.g. description "Local profile", review.model gpt-5.5, triage.contract v2, '
+            "triage.routes.codex-midi.model gpt-5, triage.routing.default_route codex-midi, "
+            "triage.routing.enabled true, output.no_tty true, runtime.full_auto off, "
+            'and description "", or pipeline.max_iterations 11). With --format json, this command emits a '
+            "object describing the edit and destination path. Routing edits are "
+            "validated against the effective inherited route table after user and "
+            "project defaults are applied, including inherited triage.contract and "
+            "routing metadata. For route-table edits, explicit fields are validated "
+            "against inherited routing context, and the edited route (plus any "
+            "required default_route row) is materialized so the owning profile "
+            "stays loadable. This also preserves explicitly-owned routing keys "
+            "(like `triage.routing.strict_on_unavailable_route` or "
+            "`triage.routing.allow_model_escalation`) even when project defaults "
+            "differ."
+        ),
+    )
+    set_parser.add_argument("name")
+    set_parser.add_argument(
+        "key",
+        help=(
+            "Field path, e.g. description, review.timeout_seconds, output.no_tty, "
+            "runtime.full_auto, triage.contract, triage.routing.enabled, triage.routing.default_route, "
+            "triage.routes.<name>.model, or budgets.max_wall_seconds."
+        ),
+    )
+    set_parser.add_argument(
+        "value",
+        help=(
+            "Field value; numeric fields accept numbers, booleans use true/false (or "
+            '1/0, yes/no, on/off). Use an empty string ("") to explicitly clear '
+            "top-level description."
+        ),
+    )
+    set_parser.add_argument("--format", choices=("json",), default=argparse.SUPPRESS)
 
     clone = subparsers.add_parser("clone", help="Clone a resolved profile into the user config.")
     clone.add_argument("source")
@@ -695,6 +769,45 @@ def build_history_parser() -> RevRemArgumentParser:
 
 def parse_history_args(argv: Sequence[str]) -> argparse.Namespace:
     return build_history_parser().parse_args(argv)
+
+
+def build_models_parser() -> RevRemArgumentParser:
+    parser = _argument_parser(
+        prog="revrem models", description="Inspect the effective model catalog."
+    )
+    subparsers = _subparsers(parser, dest="command", required=True)
+    list_parser = subparsers.add_parser("list", help="List catalog models and supported efforts.")
+    list_parser.add_argument("--harness", default=None)
+    list_parser.add_argument("--all", action="store_true", help="Include models for every harness.")
+    list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    return parser
+
+
+def parse_models_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_models_parser().parse_args(argv)
+
+
+def build_stats_parser() -> RevRemArgumentParser:
+    parser = _argument_parser(prog="revrem stats", description="Summarize local RevRem telemetry.")
+    subparsers = _subparsers(parser, dest="command", required=True)
+    models = subparsers.add_parser("models", help="Summarize recorded model invocations.")
+    models.add_argument("--limit", type=int, default=100)
+    scope = models.add_mutually_exclusive_group()
+    scope.add_argument(
+        "--repo",
+        default=None,
+        help="Only runs for this repository (default: current repository).",
+    )
+    scope.add_argument("--all-repos", action="store_true")
+    models.add_argument("--phase")
+    models.add_argument("--harness")
+    models.add_argument("--model")
+    models.add_argument("--format", choices=("text", "json"), default="text")
+    return parser
+
+
+def parse_stats_args(argv: Sequence[str]) -> argparse.Namespace:
+    return build_stats_parser().parse_args(argv)
 
 
 def build_checks_parser() -> RevRemArgumentParser:

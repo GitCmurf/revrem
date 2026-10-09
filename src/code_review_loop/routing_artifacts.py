@@ -114,6 +114,7 @@ def _resolve_route(
         routing_context,
         model_proposal_tier=model_proposal.get("route_tier"),
         max_timeout_seconds=remaining_wall_budget_seconds(config, ctx),
+        cwd=config.cwd,
     )
     progress_event(
         config,

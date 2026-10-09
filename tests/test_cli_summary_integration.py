@@ -1,15 +1,53 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 
+import pytest
+
 import tests.support.application_runner as runner_mod
-from code_review_loop import artifacts, reporting
+from code_review_loop import artifacts, events, reporting
 from code_review_loop.cli.main import _redacted_argv
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
 from code_review_loop.invocation import invocation_payload
 from code_review_loop.runtime import format_terminal_summary
+
+
+@pytest.mark.parametrize("stream", ["gap", "missing", "no-tokens", "unreadable"])
+def test_summary_survives_unavailable_telemetry_without_stale_totals(tmp_path, monkeypatch, stream):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    config = LoopConfig(cwd=tmp_path, artifact_dir=artifact_dir)
+    event = events.make_event(run_id="test", seq=2 if stream == "gap" else 1,
+                              kind="model_invocation", phase="review", payload={"model": "test"})
+    if stream != "missing":
+        (artifact_dir / events.EVENTS_FILENAME).write_text(
+            json.dumps(event.to_dict()) + "\n", encoding="utf-8")
+    if stream == "unreadable":
+        def fail_read(path):
+            raise OSError("unreadable telemetry")
+        monkeypatch.setattr(events, "read_events", fail_read)
+    summary = {"final_status": "clear", "tokens": {"total": 999},
+               "model_invocations": [{"model": "stale"}]}
+    reporting.write_summary(config, summary)
+    saved = json.loads((artifact_dir / "summary.json").read_text(encoding="utf-8"))
+    assert saved["final_status"] == "clear"
+    assert saved["tokens"] is None
+    assert [row["model"] for row in saved["model_invocations"]] == (
+        ["test"] if stream == "no-tokens" else [])
+
+
+def test_summary_invocations_preserve_event_phase_and_iteration(tmp_path):
+    event = events.make_event(run_id="test", seq=1, kind="model_invocation", phase="review",
+                              iteration=2, payload={"phase": "remediation", "iteration": 99, "tokens": 5})
+    (tmp_path / events.EVENTS_FILENAME).write_text(json.dumps(event.to_dict()) + "\n", encoding="utf-8")
+    summary = {}
+    reporting.add_model_invocations(summary, tmp_path)
+    assert summary["model_invocations"][0]["phase"] == "review"
+    assert summary["model_invocations"][0]["iteration"] == 2
+    assert summary["tokens"]["total"] == 5
 
 
 def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
@@ -146,7 +184,38 @@ def test_summary_writes_invocation_artifact_and_path(tmp_path):
 
     assert artifact_payload == invocation
     assert summary["invocation"] == invocation
+    assert summary["command_line"] == ["revrem", "--base", "main"]
+    assert summary["command"] == "revrem --base main"
     assert summary["artifact_paths"]["invocation"] == str(invocation_path)
+
+
+def test_summary_quotes_whitespace_arguments_in_command_string(tmp_path):
+    review_outputs = iter(
+        [
+            "Full review comments:\n\n- [P2] Fix init\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        if args[1] == "review":
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="fixed\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        command_line=("revrem", "--check", "pytest -q"),
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["command_line"] == ["revrem", "--check", "pytest -q"]
+    assert summary["command"] == shlex.join(("revrem", "--check", "pytest -q"))
+    assert shlex.split(summary["command"]) == ["revrem", "--check", "pytest -q"]
 
 
 def test_summary_collects_commit_message_fallback_artifacts(tmp_path):
@@ -433,7 +502,7 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "Phase config:" in text
     assert "Latest review: tmp/run/review-final.txt" in text
     assert (
-        "Continue command: ./.venv/bin/revrem --base main --max-iterations 2 "
+        "Continue command: revrem --base main --max-iterations 2 "
         "--check './.venv/bin/ruff check .' --check './.venv/bin/pytest -q' "
         "--timeout-seconds 0 --review-model gpt-5.5 --review-reasoning-effort low "
         "--remediation-model gpt-5.4-mini --remediation-reasoning-effort medium "
@@ -450,6 +519,54 @@ def test_terminal_summary_surfaces_latest_findings_and_paths():
     assert "failed: ./.venv/bin/pytest -q (tmp/run/check-2-2.txt)" in text
     assert "- [P2] Fix summary counts" in text
     assert "source=cli" in text
+
+
+def test_terminal_summary_resume_command_does_not_emit_dev_venv_executable():
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "command_line": ["/repo/.venv/bin/revrem", "--profile", "docs"],
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+            },
+        }
+    )
+
+    assert "Continue command: revrem --base main --max-iterations 1" in text
+    assert ".venv/bin/revrem" not in text
+
+
+@pytest.mark.parametrize(
+    ("full_auto", "expected_flag"),
+    [(False, "--no-full-auto"), (True, "--full-auto")],
+)
+def test_terminal_summary_resume_command_preserves_full_auto_mode(
+    full_auto: bool, expected_flag: str
+) -> None:
+    text = format_terminal_summary(
+        {
+            "artifact_dir": "tmp/run",
+            "final_status": "findings",
+            "stopped_reason": "max_iterations_reached",
+            "artifact_paths": {"reviews": ["tmp/run/review-final.txt"]},
+            "base": "main",
+            "max_iterations": 1,
+            "profile": "dogfood",
+            "resume_config": {
+                "base": "main",
+                "max_iterations": 1,
+                "full_auto": full_auto,
+            },
+        }
+    )
+
+    assert expected_flag in text
 
 
 def test_terminal_summary_resume_command_preserves_forced_route():
@@ -749,6 +866,27 @@ def test_terminal_summary_prefers_commit_output_artifact():
 
     assert "1: review=findings, check failures: 0, commit=committed" in text
     assert "Latest commit artifact: tmp/run/commit-1.txt" in text
+
+
+def test_terminal_summary_labels_final_review_remediation_pass():
+    summary = {
+        "artifact_dir": "tmp/run",
+        "final_status": "clear",
+        "stopped_reason": "review_clear",
+        "max_iterations": 3,
+        "iterations": [
+            {
+                "iteration": 4,
+                "review_status": "findings",
+                "final_review_remediation": True,
+                "check_failures": 0,
+            }
+        ],
+    }
+
+    text = format_terminal_summary(summary)
+
+    assert "final recovery 1: review=findings, check failures: 0" in text
 
 
 def test_terminal_summary_finds_commit_output_artifact_with_windows_separators():
@@ -1096,3 +1234,12 @@ def test_unknown_final_review_is_recorded_in_diagnostics(tmp_path):
     assert summary["bug_report_path"] == str(report_path)
     assert report_path.is_file()
     assert final_status_path.is_file()
+
+
+def test_summary_does_not_count_boolean_tokens(tmp_path):
+    event = events.make_event(run_id="test", seq=1, kind="model_invocation",
+                              payload={"tokens": True})
+    (tmp_path / events.EVENTS_FILENAME).write_text(json.dumps(event.to_dict()) + "\n", encoding="utf-8")
+    summary = {}
+    reporting.add_model_invocations(summary, tmp_path)
+    assert summary["tokens"] is None

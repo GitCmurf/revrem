@@ -10,6 +10,8 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
+from code_review_loop import harnesses
+from code_review_loop.adapters.phase_support import TRIAGE_PHASE
 from code_review_loop.cli.args import parse_args
 from code_review_loop.cli.commands.profile import save_profile_from_args
 from code_review_loop.cli.config_builder import build_loop_config
@@ -23,6 +25,7 @@ from code_review_loop.cli.exit import map_application_call
 from code_review_loop.cli.wizard import run_wizard
 from code_review_loop.git_status import non_artifact_status_entries_from_status_z
 from code_review_loop.invocation import invocation_payload, redact_argv
+from code_review_loop.model_catalog import KNOWN_EFFORTS, validate_selection
 from code_review_loop.prompts_composer import trim_for_prompt
 
 
@@ -49,6 +52,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(raw_argv)
     try:
         config, summary_format = build_loop_config(args, Path.cwd())
+        _validate_model_selections(config)
         command_line = ("revrem", *_redacted_argv(raw_argv))
         config = replace(
             config,
@@ -111,6 +115,82 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         return 0  # outcome-exempt: dry-run summary is intentionally non-terminal
     return app_exit.exit_code
+
+
+def _validate_model_selections(config) -> None:
+    # Validate persisted values even for inactive phases and non-Codex drivers.
+    for field in (
+        "reasoning_effort", "review_reasoning_effort", "remediation_reasoning_effort",
+        "triage_reasoning_effort", "commit_reasoning_effort",
+    ):
+        effort = getattr(config, field)
+        if effort is not None and effort not in KNOWN_EFFORTS:
+            raise ValueError(
+                f"{field}: reasoning effort {effort!r} is not one of: {', '.join(KNOWN_EFFORTS)}"
+            )
+    if config.profile_v2 is not None:
+        for name, route in config.profile_v2.triage.routes.items():
+            if route.reasoning_effort and route.reasoning_effort not in KNOWN_EFFORTS:
+                raise ValueError(f"route {name}: unknown reasoning effort {route.reasoning_effort!r}")
+    selections: list[tuple[str, str, str | None, str | None]] = [
+        (
+            "review",
+            config.review_harness,
+            config.review_model or config.model,
+            config.review_reasoning_effort or config.reasoning_effort,
+        ),
+        (
+            "remediation",
+            config.remediation_harness,
+            config.remediation_model or config.model,
+            config.remediation_reasoning_effort or config.reasoning_effort,
+        ),
+    ]
+    if config.triage_enabled:
+        selections.append(
+            (
+                TRIAGE_PHASE,
+                config.triage_harness,
+                config.triage_model or config.model,
+                config.triage_reasoning_effort or config.reasoning_effort,
+            )
+        )
+    if config.commit_after_remediation:
+        selections.append(
+            (
+                "commit",
+                config.commit_message_harness,
+                config.commit_message_model,
+                config.commit_reasoning_effort,
+            )
+        )
+    for phase, harness, model, effort in selections:
+        if not harnesses.reasoning_effort_supported(harness, cwd=config.cwd):
+            continue
+        warning = validate_selection(harness, model, effort, cwd=config.cwd)
+        if warning:
+            print(f"WARNING: {phase}: {warning}", file=sys.stderr)
+    if (
+        config.profile_v2 is not None
+        and config.profile_v2.triage.routing.enabled
+        and config.triage_enabled
+    ):
+        routes = config.profile_v2.triage.routes
+        for name, route in routes.items():
+            if not harnesses.reasoning_effort_supported(route.harness, cwd=config.cwd):
+                continue
+            warning = validate_selection(
+                route.harness,
+                route.model or config.remediation_model or config.model,
+                (
+                    route.reasoning_effort
+                    or config.remediation_reasoning_effort
+                    or config.reasoning_effort
+                ),
+                cwd=config.cwd,
+            )
+            if warning:
+                print(f"WARNING: route {name}: {warning}", file=sys.stderr)
 
 
 def _print_summary(summary: dict[str, object], *, summary_format: str) -> None:
@@ -234,7 +314,7 @@ def _print_pending_review_summary(
             "Validate it only if you want RevRem to check whether that older "
             "finding still applies to the current checkout."
         )
-        prompt = "Validate this older review? [v]alidate / [d]etails / [f]resh / [c]ancel: "
+        prompt = "Validate this older review? [v]alidate / [d]etails / start [f]resh review / [c]ancel: "
     print(
         f"{heading}\nReview: {candidate.path}\nRun: {candidate.run_dir}\nStatus: {status}",
         file=sys.stderr,

@@ -372,8 +372,8 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
                 ),
                 stderr=(
                     "Command timed out after 300.0 seconds\n"
-                    'Command: codex --model gpt-5.5 review -c '
-                    '\'model_reasoning_effort="low"\' --base main\n'
+                    "Command: codex --model gpt-5.5 review -c "
+                    "'model_reasoning_effort=\"low\"' --base main\n"
                 ),
             )
         return CommandResult(list(args), 0, stdout="attempted remediation\n")
@@ -402,6 +402,7 @@ def test_loop_writes_failure_summary_when_final_review_invocation_fails(tmp_path
         {
             "iteration": 1,
             "review_status": "findings",
+            "remediated": True,
             "check_failures": 0,
             "checks": [
                 {
@@ -885,6 +886,31 @@ def test_find_pending_review_candidate_reports_metadata(tmp_path):
     assert candidate.stopped_reason == "triage_failed"
     assert candidate.error == "fragment missing"
     assert "Fix restart path" in candidate.excerpt
+
+
+def test_pending_review_uses_latest_final_recovery_artifact(tmp_path):
+    run = tmp_path / "20260428T020000Z"
+    run.mkdir()
+    first = run / "review-final.txt"
+    recovered = run / "review-final-recovery-1.txt"
+    first.write_text("first final finding", encoding="utf-8")
+    recovered.write_text("recovery final finding", encoding="utf-8")
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "final_status": "findings",
+                "artifact_paths": {"reviews": [str(first), str(recovered)]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(first, (1, 1))
+    os.utime(recovered, (2, 2))
+
+    candidate = find_pending_review_candidate(tmp_path)
+
+    assert candidate is not None
+    assert candidate.path == recovered
 
 
 def test_find_pending_review_candidate_returns_none_after_newer_clear_run(tmp_path):

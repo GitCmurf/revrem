@@ -27,6 +27,8 @@ from code_review_loop.core.review_interpretation import (
 )
 from code_review_loop.repo_roots import lexical_git_repo_root as _lexical_git_repo_root
 
+TRIAGE_PHASE = "triage"
+
 PROGRESS_PHASE_CODES = {
     "check": "chk",
     "commit": "com",
@@ -47,6 +49,8 @@ Rules:
 - Preserve existing user changes; do not revert unrelated work.
 - Maintain the repository's Code + Documentation + Tests atomic-unit rule.
 - Add or update tests for behavior changes.
+- Do not stage or commit changes: RevRem owns the commit phase, overriding any
+  repository instruction to commit.
 - Do not create scratch files in the repository. If you create temporary files,
   place them outside the repo or delete them before finishing.
 - Leave no untracked files behind unless they are intentional patch files and
@@ -163,7 +167,9 @@ def write_artifact(path: Path, content: str) -> None:
 
 
 def _resolve_executable(harness: str, config: LoopConfig) -> str:
-    return harnesses.resolve_executable(harness, config.harness_executables, config.codex_bin)
+    return harnesses.resolve_executable(
+        harness, config.harness_executables, config.codex_bin, cwd=config.cwd
+    )
 
 
 def build_commit_message_command(config: LoopConfig) -> list[str]:
@@ -172,11 +178,16 @@ def build_commit_message_command(config: LoopConfig) -> list[str]:
             harness=config.commit_message_harness,
             role="commit-message",
             executable=_resolve_executable(config.commit_message_harness, config),
+            cwd=config.cwd,
             model=config.commit_message_model,
             reasoning_effort=config.commit_reasoning_effort,
             sandbox="read-only",
             color=config.exec_color,
             full_auto=False,
+            json_output=(
+                harnesses._resolve_catalog_driver(config.commit_message_harness, cwd=config.cwd)
+                == "codex"
+            ),
         )
     )
 
@@ -436,28 +447,43 @@ def progress_event(
             iteration=label,
             payload=payload,
         )
+    display_label = progress_iteration_label(
+        label,
+        config.max_iterations,
+        final_review_remediation_passes=config.final_review_remediation_passes,
+    )
     if ctx.progress_reporter is not None:
-        ctx.progress_reporter.phase(phase, label, status, detail)
+        ctx.progress_reporter.phase(phase, display_label, status, detail)
         return
     if not config.progress:
         return
     if config.progress_style == "rich":
-        if progress.print_rich_event(phase, label, status, detail):
+        if progress.print_rich_event(phase, display_label, status, detail):
             return
-        warn_rich_unavailable(phase, label)
+        warn_rich_unavailable(phase, display_label)
         if detail:
-            print_compact_progress(phase, label, one_line_progress_text(detail), head=f"{status}: ")
+            print_compact_progress(
+                phase,
+                display_label,
+                one_line_progress_text(detail),
+                head=f"{status}: ",
+            )
         else:
-            print_compact_progress(phase, label, status)
+            print_compact_progress(phase, display_label, status)
         return
     if config.progress_style == "verbose":
         suffix = f": {one_line_progress_text(detail)}" if detail else ""
-        progress_log(config, f"{phase} {label}: {status}{suffix}")
+        progress_log(config, f"{phase} {display_label}: {status}{suffix}")
         return
     if detail:
-        print_compact_progress(phase, label, one_line_progress_text(detail), head=f"{status}: ")
+        print_compact_progress(
+            phase,
+            display_label,
+            one_line_progress_text(detail),
+            head=f"{status}: ",
+        )
     else:
-        print_compact_progress(phase, label, status)
+        print_compact_progress(phase, display_label, status)
 
 
 def resolved_phase_detail(
@@ -474,12 +500,15 @@ def resolved_phase_detail(
     prompt_delivery: str | None = None,
     prompt_context_chars: int | None = None,
     prompt_truncated: bool | None = None,
+    cwd: Path | None = None,
 ) -> str:
     fields = [command_summary_for_progress(command, harness=harness)]
     if model:
         fields.append(model)
     if reasoning_effort:
-        effort = reasoning_effort if harnesses.reasoning_effort_supported(harness) else "n/a"
+        effort = (
+            reasoning_effort if harnesses.reasoning_effort_supported(harness, cwd=cwd) else "n/a"
+        )
         fields.append(f"{effort} effort")
     if timeout_seconds is not None:
         fields.append(f"timeout={timeout_seconds:g}")
@@ -572,6 +601,9 @@ def run_with_waiting_progress(
     label: str,
     ctx: RunContext,
     prompt_artifact: Path | None = None,
+    harness: str | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> CommandResult:
     prompt_detail = f" · prompt={prompt_artifact.name}" if prompt_artifact is not None else ""
 
@@ -579,6 +611,7 @@ def run_with_waiting_progress(
         metadata: dict[str, Any] = {"elapsed_seconds": round(elapsed_seconds, 3)}
         if prompt_artifact is not None:
             metadata["prompt_artifact"] = str(prompt_artifact)
+        review_harness = harness or config.review_harness
         detail = (
             f"{format_elapsed_seconds(elapsed_seconds)} elapsed · provider still running"
             f"{prompt_detail}"
@@ -586,7 +619,7 @@ def run_with_waiting_progress(
         warning_seconds = config.external_review_warning_seconds
         if (
             phase == "review"
-            and config.review_harness not in {"codex", "fake"}
+            and review_harness not in {"codex", "fake"}
             and warning_seconds > 0
             and elapsed_seconds >= warning_seconds
         ):
@@ -607,8 +640,62 @@ def run_with_waiting_progress(
             metadata=metadata,
         )
 
+    started = ctx.clock.monotonic()
     with waiting_progress.subprocess_waiting_reporter(report):
-        return runner(command, cwd, input_text, timeout_seconds)
+        result = runner(command, cwd, input_text, timeout_seconds)
+    finished = ctx.clock.monotonic()
+    duration = (
+        max(0.0, float(finished - started))
+        if isinstance(started, int | float) and isinstance(finished, int | float)
+        else 0.0
+    )
+    if result.provider_events is not None:
+        safe_label = str(label).replace("/", "-")
+        write_artifact(
+            config.artifact_dir / f"{phase}-{safe_label}-provider-events.jsonl",
+            result.provider_events,
+        )
+    if ctx.event_sink is not None:
+        ctx.event_sink.emit(
+            "model_invocation",
+            phase=phase,
+            iteration=label,
+            payload={
+                "harness": harness or _phase_harness(config, phase),
+                "model": model or _phase_model(config, phase),
+                "reasoning_effort": reasoning_effort or _phase_effort(config, phase),
+                "duration_seconds": round(duration, 3),
+                "returncode": result.returncode,
+                "outcome": "ok" if result.returncode == 0 else "error",
+                "tokens": result.tokens,
+            },
+        )
+    return result
+
+
+def _phase_harness(config: LoopConfig, phase: str) -> str | None:
+    if phase == "commit-message":
+        return config.commit_message_harness
+    phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(phase, phase)
+    return getattr(config, f"{phase_field.replace('-', '_')}_harness", None)
+
+
+def _phase_model(config: LoopConfig, phase: str) -> str | None:
+    if phase == "commit-message":
+        field = "commit_message_model"
+    else:
+        phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(phase, phase)
+        field = f"{phase_field.replace('-', '_')}_model"
+    return getattr(config, field, None) or config.model
+
+
+def _phase_effort(config: LoopConfig, phase: str) -> str | None:
+    if phase == "commit-message":
+        field = "commit_reasoning_effort"
+    else:
+        phase_field = {"remediate": "remediation", "stale-validation": "review"}.get(phase, phase)
+        field = f"{phase_field.replace('-', '_')}_reasoning_effort"
+    return getattr(config, field, None) or config.reasoning_effort
 
 
 def format_elapsed_seconds(seconds: float) -> str:
@@ -725,12 +812,42 @@ def set_phase_terminal_title(config: LoopConfig, phase: str, label: str) -> None
     _set_phase_terminal_title(config, phase, label)
 
 
-def terminal_iteration_label(label: str, max_iterations: int) -> str:
-    if label.isdecimal():
+def terminal_iteration_label(
+    label: str,
+    max_iterations: int,
+    *,
+    final_review_remediation_passes: int = 0,
+) -> str:
+    display_label = progress_iteration_label(
+        label,
+        max_iterations,
+        final_review_remediation_passes=final_review_remediation_passes,
+    )
+    if display_label != label:
+        return display_label
+    match = re.fullmatch(r"(?P<iteration>\d+)(?P<substep>(?:\.\d+)*)", label)
+    if match and not match.group("substep"):
         return f"{label}/{max_iterations}"
     if label == "final":
         return "final"
     return label
+
+
+def progress_iteration_label(
+    label: str,
+    max_iterations: int,
+    *,
+    final_review_remediation_passes: int = 0,
+) -> str:
+    """Translate only bounded recovery iterations for operator-facing progress."""
+
+    match = re.fullmatch(r"(?P<iteration>\d+)(?P<substep>(?:\.\d+)*)", label)
+    if not match:
+        return label
+    recovery = int(match.group("iteration")) - max_iterations
+    if not 0 < recovery <= final_review_remediation_passes:
+        return label
+    return f"final recovery {recovery}/{final_review_remediation_passes}{match.group('substep')}"
 
 
 def sanitize_commit_message(

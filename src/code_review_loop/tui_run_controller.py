@@ -1,0 +1,716 @@
+"""Textual-free live-run process controller for the optional TUI."""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import stat
+import subprocess
+import threading
+import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import IO, Literal
+
+from code_review_loop import events, profiles, tui_state
+from code_review_loop.identity import SYSTEM_IDENTITY, RunIdentity
+
+RunControllerStatus = Literal[
+    "idle",
+    "starting",
+    "running",
+    "completed-clear",
+    "completed-findings",
+    "completed-unknown",
+    "budget",
+    "setup-failed",
+    "cancelled",
+    "interrupted-before-run-initialized",
+    "failed",
+    "failed-forced-cleanup",
+]
+TERMINAL_STATUSES: frozenset[RunControllerStatus] = frozenset(
+    {
+        "completed-clear",
+        "completed-findings",
+        "completed-unknown",
+        "budget",
+        "setup-failed",
+        "cancelled",
+        "interrupted-before-run-initialized",
+        "failed",
+        "failed-forced-cleanup",
+    }
+)
+
+# A cancellation acknowledgement means the child has taken ownership of a
+# controlled stop and is writing terminal artifacts.  Keep its deadline
+# independent from the short signal-escalation grace period.
+DEFAULT_CANCELLATION_FINALIZATION_SECONDS = 15.0
+
+PopenFactory = Callable[..., subprocess.Popen[str]]
+EntrypointResolver = Callable[[Sequence[str]], list[str]]
+
+
+@dataclass(frozen=True)
+class LiveRunLaunch:
+    argv: tuple[str, ...]
+    artifact_dir_arg: str
+    artifact_dir: Path
+
+
+@dataclass(frozen=True)
+class LiveEventSnapshot:
+    events: tuple[events.Event, ...] = ()
+    truncated: bool = False
+    error: str | None = None
+    ready: bool = False
+
+
+@dataclass(frozen=True)
+class EventFileIdentity:
+    inode: int | None
+    size: int
+    mtime_ns: int
+    first_run_id: str | None
+
+
+@dataclass(frozen=True)
+class FileIdentity:
+    inode: int | None
+    size: int
+    mtime_ns: int
+
+
+@dataclass(frozen=True)
+class DescendantIdentity:
+    """A descendant PID paired with an OS-provided, reuse-resistant identity."""
+
+    pid: int
+    start_time: str
+
+
+@dataclass
+class _BoundedLines:
+    max_lines: int = 200
+    _lines: list[str] = field(default_factory=list)
+
+    @property
+    def lines(self) -> tuple[str, ...]:
+        return tuple(self._lines)
+
+    def append(self, line: str) -> None:
+        self._lines.append(line)
+        if len(self._lines) > self.max_lines:
+            del self._lines[: len(self._lines) - self.max_lines]
+
+
+@dataclass
+class LiveRunController:
+    status: RunControllerStatus = "idle"
+    process: subprocess.Popen[str] | None = None
+    launch: LiveRunLaunch | None = None
+    exit_code: int | None = None
+    message: str | None = None
+    stdout_tail: tuple[str, ...] = ()
+    stderr_tail: tuple[str, ...] = ()
+    preexisting_events: EventFileIdentity | None = None
+    preexisting_summary: FileIdentity | None = None
+    _stdout_buffer: _BoundedLines = field(default_factory=_BoundedLines)
+    _stderr_buffer: _BoundedLines = field(default_factory=_BoundedLines)
+    _drain_threads: list[threading.Thread] = field(default_factory=list)
+    _events_cache_key: tuple[int, int] | None = None
+    _events_cache_snapshot: LiveEventSnapshot | None = None
+
+    def start(
+        self,
+        *,
+        profile: profiles.Profile,
+        plan: tui_state.LaunchPlan,
+        cwd: Path,
+        entrypoint_resolver: EntrypointResolver,
+        popen_factory: PopenFactory = subprocess.Popen,
+        env: Mapping[str, str] | None = None,
+        identity: RunIdentity = SYSTEM_IDENTITY,
+        snapshot_profile: bool = False,
+    ) -> LiveRunLaunch:
+        if self.process is not None and self.process.poll() is None:
+            raise RuntimeError("a live run is already active")
+        launch = prepare_live_run_launch(
+            profile=profile, plan=plan, cwd=cwd, identity=identity
+        )
+        if snapshot_profile:
+            launch.artifact_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_path = (
+                launch.artifact_dir / f"profile-snapshot-{identity.new_run_id()}.toml"
+            )
+            snapshot_path.write_text(profile_snapshot_toml(profile, cwd=cwd), encoding="utf-8")
+            argv_with_snapshot = (
+                *launch.argv,
+                "--profile-snapshot",
+                str(snapshot_path),
+            )
+            launch = replace(launch, argv=argv_with_snapshot)
+        argv = entrypoint_resolver(launch.argv)
+        self.status = "starting"
+        self.launch = launch
+        self.exit_code = None
+        self.message = None
+        self.preexisting_events = _event_file_identity(
+            launch.artifact_dir / events.EVENTS_FILENAME
+        )
+        self.preexisting_summary = _file_identity(launch.artifact_dir / "summary.json")
+        self._stdout_buffer = _BoundedLines()
+        self._stderr_buffer = _BoundedLines()
+        self._events_cache_key = None
+        self._events_cache_snapshot = None
+        try:
+            self.process = popen_factory(
+                argv,
+                cwd=cwd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                start_new_session=True,
+            )
+        except OSError as exc:
+            self.process = None
+            self.status = "setup-failed"
+            self.message = f"failed to start live run: {exc}"
+            raise
+        self._drain_threads = [
+            _drain_stream(
+                self.process.stdout, self._stdout_buffer, name="revrem-tui-stdout"
+            ),
+            _drain_stream(
+                self.process.stderr, self._stderr_buffer, name="revrem-tui-stderr"
+            ),
+        ]
+        self.status = "running"
+        return launch
+
+    def refresh(self) -> RunControllerStatus:
+        if self.process is None:
+            return self.status
+        exit_code = self.process.poll()
+        if exit_code is None:
+            return self.status
+        return self.finish(exit_code)
+
+    def cancel(
+        self,
+        *,
+        grace_seconds: float = 5.0,
+        finalization_seconds: float = DEFAULT_CANCELLATION_FINALIZATION_SECONDS,
+    ) -> RunControllerStatus:
+        if self.process is None:
+            return self.status
+        if self.process.poll() is not None:
+            return self.finish(self.process.returncode)
+        descendants = _descendant_identities(self.process)
+        _signal_process_group(self.process, signal.SIGINT)
+        try:
+            status = self.finish(self.process.wait(timeout=grace_seconds))
+            _terminate_descendants(descendants, grace_seconds=grace_seconds)
+            return status
+        except subprocess.TimeoutExpired:
+            pass
+        # The child has entered its controlled cancellation path and is writing
+        # terminal artifacts. Avoid interrupting that finalization with SIGTERM.
+        if self._cancellation_acknowledged():
+            try:
+                status = self.finish(self.process.wait(timeout=finalization_seconds))
+                _terminate_descendants(descendants, grace_seconds=grace_seconds)
+                return status
+            except subprocess.TimeoutExpired:
+                pass
+        _signal_process_group(self.process, signal.SIGTERM)
+        _signal_descendant_process_groups(descendants, signal.SIGTERM)
+        try:
+            status = self.finish(self.process.wait(timeout=grace_seconds))
+            _terminate_descendants(descendants, grace_seconds=grace_seconds)
+            return status
+        except subprocess.TimeoutExpired:
+            _signal_process_group(self.process, signal.SIGKILL)
+            _signal_descendant_process_groups(descendants, signal.SIGKILL)
+            try:
+                self.process.wait(timeout=grace_seconds)
+            except subprocess.TimeoutExpired:
+                self.message = "process has not exited after SIGKILL; cleanup is incomplete"
+            for thread in self._drain_threads:
+                thread.join(timeout=1)
+            self.stdout_tail = self._stdout_buffer.lines
+            self.stderr_tail = self._stderr_buffer.lines
+            self.status = "failed-forced-cleanup"
+            self.exit_code = self.process.returncode
+            return self.status
+
+    def finish(self, exit_code: int | None = None) -> RunControllerStatus:
+        if self.process is None:
+            return self.status
+        if exit_code is None:
+            exit_code = self.process.wait()
+        for thread in self._drain_threads:
+            thread.join(timeout=1)
+        self.exit_code = exit_code
+        self.stdout_tail = self._stdout_buffer.lines
+        self.stderr_tail = self._stderr_buffer.lines
+        summary = self._read_summary()
+        self.status = classify_exit(exit_code, summary=summary)
+        if summary is None and exit_code != 0:
+            detail = "\n".join((*self.stderr_tail, *self.stdout_tail)).strip()
+            self.message = (
+                detail
+                or f"run exited with code {exit_code} before writing summary.json"
+            )
+        return self.status
+
+    def stdout_lines(self) -> tuple[str, ...]:
+        """Return currently buffered stdout for an in-flight run or final tail."""
+        if self.process is None or self.process.poll() is not None:
+            return self.stdout_tail
+        return self._stdout_buffer.lines
+
+    def stderr_lines(self) -> tuple[str, ...]:
+        """Return currently buffered stderr for an in-flight run or final tail."""
+        if self.process is None or self.process.poll() is not None:
+            return self.stderr_tail
+        return self._stderr_buffer.lines
+
+    def _read_summary(self) -> dict[str, object] | None:
+        if self.launch is None:
+            return None
+        summary_path = self.launch.artifact_dir / "summary.json"
+        if not summary_path.is_file():
+            return None
+        if _matches_preexisting_file(summary_path, self.preexisting_summary):
+            return None
+        try:
+            payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def read_summary(self) -> dict[str, object] | None:
+        """Return the current run's summary when it belongs to this launch."""
+        return self._read_summary()
+
+    def _cancellation_acknowledged(self) -> bool:
+        return any(event.kind == "cancellation" for event in self.read_live_events().events)
+
+    def read_live_events(self) -> LiveEventSnapshot:
+        # Called on every refresh tick. Cache the parsed snapshot keyed on the
+        # file's (size, mtime_ns) so an unchanged events.jsonl is not re-read and
+        # re-parsed each tick; identical size+mtime implies identical content and
+        # therefore an identical staleness verdict and event set.
+        if self.launch is None:
+            return LiveEventSnapshot()
+        events_path = self.launch.artifact_dir / events.EVENTS_FILENAME
+        try:
+            stat_result = events_path.stat()
+        except OSError:
+            self._events_cache_key = None
+            self._events_cache_snapshot = None
+            return LiveEventSnapshot(ready=False)
+        if not stat.S_ISREG(stat_result.st_mode):
+            return LiveEventSnapshot(ready=False)
+        cache_key = (stat_result.st_size, stat_result.st_mtime_ns)
+        if (
+            cache_key == self._events_cache_key
+            and self._events_cache_snapshot is not None
+        ):
+            return self._events_cache_snapshot
+        snapshot = self._read_live_events_uncached(events_path)
+        self._events_cache_key = cache_key
+        self._events_cache_snapshot = snapshot
+        return snapshot
+
+    def _read_live_events_uncached(self, events_path: Path) -> LiveEventSnapshot:
+        if _matches_preexisting_events(events_path, self.preexisting_events):
+            return LiveEventSnapshot(ready=False)
+        try:
+            records, truncated = events.read_events(events_path)
+        except (OSError, ValueError) as exc:
+            return LiveEventSnapshot(error=str(exc), ready=True)
+        return LiveEventSnapshot(events=tuple(records), truncated=truncated, ready=True)
+
+
+def prepare_live_run_launch(
+    *,
+    profile: profiles.Profile,
+    plan: tui_state.LaunchPlan,
+    cwd: Path,
+    identity: RunIdentity = SYSTEM_IDENTITY,
+) -> LiveRunLaunch:
+    artifact_dir_arg = profile.output.artifact_dir or str(
+        default_live_artifact_dir(identity=identity)
+    )
+    artifact_dir = _resolve_child_path(artifact_dir_arg, cwd=cwd)
+    argv = (
+        *plan.argv,
+        "--artifact-dir",
+        artifact_dir_arg,
+        "--no-tty",
+        "--pending-review",
+        "ignore",
+        "--summary-format",
+        "json",
+    )
+    return LiveRunLaunch(
+        argv=tuple(argv),
+        artifact_dir_arg=artifact_dir_arg,
+        artifact_dir=artifact_dir,
+    )
+
+
+def default_live_artifact_dir(*, identity: RunIdentity = SYSTEM_IDENTITY) -> Path:
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return Path(".revrem") / "runs" / f"{timestamp}-{identity.new_run_id()}"
+
+
+def profile_snapshot_toml(profile: profiles.Profile, *, cwd: Path) -> str:
+    """Serialize a launch snapshot without turning implicit defaults explicit."""
+    raw_profile: dict[str, object] = {}
+    if profiles.profile_runtime_key_explicit(
+        profile.name, cwd, "external_review_input_chars"
+    ):
+        raw_profile = {
+            "runtime": {
+                "external_review_input_chars": profile.runtime.external_review_input_chars
+            }
+        }
+    return profiles.profile_to_toml(
+        profile,
+        include_wrapper=True,
+        omit_builtin_defaults=True,
+        raw_profile=raw_profile,
+    )
+
+
+def classify_exit(
+    exit_code: int,
+    *,
+    summary: dict[str, object] | None = None,
+) -> RunControllerStatus:
+    """Map process exit code and summary status to live-run terminal status.
+
+    Exit code 2 is used for both terminal findings and unknown-review outcomes.
+    Distinguish those cases so unknown outcomes remain review-level terminals.
+    """
+    final_status = str(summary.get("final_status") or "") if summary else ""
+    stopped_reason = str(summary.get("stopped_reason") or "") if summary else ""
+    if exit_code == 0:
+        if final_status == "clear":
+            return "completed-clear"
+        return "failed"
+    if exit_code == 2:
+        if summary is None:
+            return "completed-findings"
+        if final_status == "findings":
+            return "completed-findings"
+        if final_status == "unknown":
+            return "completed-unknown"
+        return "failed"
+    if exit_code == 3:
+        return "budget"
+    if exit_code == 4:
+        return "setup-failed"
+    if exit_code == 5 and final_status == "error" and stopped_reason == "cancelled":
+        return "cancelled"
+    if exit_code in (130, -signal.SIGINT) and summary is None:
+        return "interrupted-before-run-initialized"
+    return "failed"
+
+
+def _resolve_child_path(path: str, *, cwd: Path) -> Path:
+    resolved = Path(path)
+    if resolved.is_absolute():
+        return resolved
+    return cwd / resolved
+
+
+def _signal_pid_group(pid: int, signum: int) -> bool:
+    """Signal pid's process group; return True when handled (or the target is
+    already gone), False when the caller should fall back to a direct signal."""
+    if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+        try:
+            os.killpg(os.getpgid(pid), signum)
+            return True
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+    return False
+
+
+def _signal_process_group(process: subprocess.Popen[str], signum: int) -> None:
+    pid = getattr(process, "pid", None)
+    if pid is None:
+        process.send_signal(signum)
+        return
+    if not _signal_pid_group(pid, signum):
+        process.send_signal(signum)
+
+
+def _descendant_identities(
+    process: subprocess.Popen[str],
+) -> frozenset[DescendantIdentity]:
+    pid = getattr(process, "pid", None)
+    if pid is None:
+        return frozenset()
+    children_by_parent = _proc_children_by_parent()
+    descendants: set[int] = set()
+    pending = list(children_by_parent.get(pid, ()))
+    while pending:
+        child_pid = pending.pop()
+        if child_pid in descendants:
+            continue
+        descendants.add(child_pid)
+        pending.extend(children_by_parent.get(child_pid, ()))
+    return frozenset(
+        identity
+        for child_pid in descendants
+        if (identity := _descendant_identity(child_pid)) is not None
+    )
+
+
+def _proc_children_by_parent() -> dict[int, tuple[int, ...]]:
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
+        # macOS and many BSDs do not provide /proc.
+        return _proc_children_by_parent_ps()
+    return _proc_children_by_parent_procfs()
+
+
+def _proc_children_by_parent_procfs() -> dict[int, tuple[int, ...]]:
+    proc_root = Path("/proc")
+    children: dict[int, list[int]] = {}
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        try:
+            stat_text = (entry / "stat").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        ppid = _ppid_from_proc_stat(stat_text)
+        if ppid is not None:
+            children.setdefault(ppid, []).append(pid)
+    return {ppid: tuple(pids) for ppid, pids in children.items()}
+
+
+def _proc_children_by_parent_ps() -> dict[int, tuple[int, ...]]:
+    # Fallback for non-Linux POSIX hosts.
+    try:
+        ps_rows = subprocess.check_output(
+            ["ps", "-eo", "pid=,ppid="],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return {}
+    children: dict[int, list[int]] = {}
+    for line in ps_rows.splitlines():
+        fields = line.strip().split()
+        if len(fields) != 2:
+            continue
+        try:
+            pid = int(fields[0])
+            ppid = int(fields[1])
+        except ValueError:
+            continue
+        children.setdefault(ppid, []).append(pid)
+    return {ppid: tuple(pids) for ppid, pids in children.items()}
+
+
+def _ppid_from_proc_stat(stat_text: str) -> int | None:
+    # /proc/<pid>/stat wraps the command name in parentheses; the fields after
+    # the final ")" start with state and then parent pid.
+    close_paren = stat_text.rfind(")")
+    if close_paren == -1:
+        return None
+    fields = stat_text[close_paren + 1 :].strip().split()
+    if len(fields) < 2:
+        return None
+    try:
+        return int(fields[1])
+    except ValueError:
+        return None
+
+
+def _descendant_identity(pid: int) -> DescendantIdentity | None:
+    """Return a stable process identity, or None when one cannot be established.
+
+    A bare PID is deliberately insufficient: it can name an unrelated process
+    after the recorded child exits. Linux exposes the start tick in procfs;
+    other POSIX systems use ``ps`` as a best-effort equivalent. If neither is
+    available, cancellation leaves that descendant alone rather than risking an
+    unrelated process.
+    """
+    proc_stat = Path(f"/proc/{pid}/stat")
+    try:
+        start_time = _start_time_from_proc_stat(proc_stat.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        start_time = None
+    if start_time is not None:
+        return DescendantIdentity(pid=pid, start_time=start_time)
+    try:
+        output = subprocess.check_output(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    return DescendantIdentity(pid=pid, start_time=output) if output else None
+
+
+def _start_time_from_proc_stat(stat_text: str) -> str | None:
+    close_paren = stat_text.rfind(")")
+    if close_paren == -1:
+        return None
+    fields = stat_text[close_paren + 1 :].strip().split()
+    # Fields after the command begin with state (field 3); starttime is field 22.
+    return fields[19] if len(fields) > 19 else None
+
+
+def _terminate_descendants(
+    descendants: frozenset[DescendantIdentity], *, grace_seconds: float
+) -> None:
+    alive = _alive_descendants(descendants)
+    if not alive:
+        return
+    _signal_descendant_process_groups(alive, signal.SIGTERM)
+    deadline = time.monotonic() + grace_seconds
+    while alive and time.monotonic() < deadline:
+        time.sleep(0.01)
+        alive = _alive_descendants(alive)
+    if alive:
+        _signal_descendant_process_groups(alive, signal.SIGKILL)
+
+
+def _alive_descendants(
+    descendants: frozenset[DescendantIdentity],
+) -> frozenset[DescendantIdentity]:
+    alive: set[DescendantIdentity] = set()
+    for descendant in descendants:
+        try:
+            os.kill(descendant.pid, 0)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            pass
+        if _descendant_identity(descendant.pid) == descendant:
+            alive.add(descendant)
+    return frozenset(alive)
+
+
+def _signal_descendant_process_groups(
+    descendants: frozenset[DescendantIdentity], signum: int
+) -> None:
+    # Revalidate immediately before every delayed termination signal. The
+    # identity may change between the earlier liveness check and this loop.
+    for descendant in sorted(descendants, key=lambda item: item.pid):
+        if _descendant_identity(descendant.pid) != descendant:
+            continue
+        pid = descendant.pid
+        if pid == os.getpid():
+            continue
+        if _signal_pid_group(pid, signum):
+            continue
+        try:
+            os.kill(pid, signum)
+        except OSError:
+            continue
+
+
+def _event_file_identity(path: Path) -> EventFileIdentity | None:
+    base_identity = _file_identity(path)
+    if base_identity is None:
+        return None
+    return EventFileIdentity(
+        inode=base_identity.inode,
+        size=base_identity.size,
+        mtime_ns=base_identity.mtime_ns,
+        first_run_id=events.first_run_id(path),
+    )
+
+
+def _file_identity(path: Path) -> FileIdentity | None:
+    try:
+        stat_result = path.stat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(stat_result.st_mode):
+        return None
+    inode = stat_result.st_ino if hasattr(stat_result, "st_ino") else None
+    return FileIdentity(
+        inode=inode,
+        size=stat_result.st_size,
+        mtime_ns=stat_result.st_mtime_ns,
+    )
+
+
+def _matches_preexisting_file(
+    path: Path,
+    preexisting: FileIdentity | None,
+) -> bool:
+    if preexisting is None:
+        return False
+    current = _file_identity(path)
+    if current is None:
+        return False
+    return (
+        current.inode == preexisting.inode
+        and current.size == preexisting.size
+        and current.mtime_ns == preexisting.mtime_ns
+    )
+
+
+def _matches_preexisting_events(
+    path: Path,
+    preexisting: EventFileIdentity | None,
+) -> bool:
+    if preexisting is None:
+        return False
+    current = _event_file_identity(path)
+    if current is None:
+        return False
+    same_identity = (
+        current.inode == preexisting.inode
+        and current.size == preexisting.size
+        and current.mtime_ns == preexisting.mtime_ns
+    )
+    if same_identity:
+        return True
+    return (
+        current.first_run_id is not None
+        and preexisting.first_run_id is not None
+        and current.first_run_id == preexisting.first_run_id
+    )
+
+
+def _drain_stream(
+    stream: IO[str] | None,
+    buffer: _BoundedLines,
+    *,
+    name: str,
+) -> threading.Thread:
+    def run() -> None:
+        if stream is None:
+            return
+        try:
+            for line in stream:
+                buffer.append(line.rstrip("\n"))
+        finally:
+            stream.close()
+
+    thread = threading.Thread(target=run, name=name, daemon=True)
+    thread.start()
+    return thread

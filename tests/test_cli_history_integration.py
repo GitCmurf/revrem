@@ -22,6 +22,7 @@ def _clear_result(summary: dict[str, object]) -> application_mod.ReviewLoopResul
 def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 
@@ -56,6 +57,7 @@ def test_main_records_non_dry_run_history(tmp_path, monkeypatch, capsys):
 def test_main_records_failed_runs_in_history(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 
@@ -101,6 +103,7 @@ def test_main_records_failed_runs_in_history(tmp_path, monkeypatch, capsys):
 def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 
@@ -128,6 +131,7 @@ def test_main_skips_history_for_dry_run_and_explicit_opt_out(tmp_path, monkeypat
 def test_main_skips_history_when_summary_has_no_run_id(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 
@@ -150,6 +154,7 @@ def test_main_skips_history_when_summary_has_no_run_id(tmp_path, monkeypatch):
 def test_history_list_command_outputs_recent_runs(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     history_path = home / ".local" / "share" / "revrem" / "runs.jsonl"
     history_path.parent.mkdir(parents=True)
     history_path.write_text(

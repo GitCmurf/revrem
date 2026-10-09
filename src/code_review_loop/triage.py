@@ -276,6 +276,31 @@ def invalid_triage_issue(error: Exception, *, iteration: int) -> diagnostics.Dia
     )
 
 
+def unstructured_triage_issue(
+    *,
+    iteration: int,
+    artifact: str,
+    contract: str,
+) -> diagnostics.DiagnosticIssue:
+    return diagnostics.DiagnosticIssue(
+        code="revrem.triage.unstructured_output",
+        severity="warn",
+        message=(
+            f"Triage output for iteration {iteration} was not structured JSON, "
+            f"so {contract} routing was skipped."
+        ),
+        hint=(
+            "Ensure the triage prompt/model returns only the required JSON object; "
+            "RevRem continues with direct remediation when triage.on_invalid=continue."
+        ),
+        evidence={
+            "artifact": artifact,
+            "contract": contract,
+            "iteration": iteration,
+        },
+    )
+
+
 def command_failed_issue(
     *, iteration: int, returncode: int, artifact: str
 ) -> diagnostics.DiagnosticIssue:

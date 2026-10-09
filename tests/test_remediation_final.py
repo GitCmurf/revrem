@@ -289,7 +289,7 @@ reasoning_effort = "high"
     assert events_file.is_file()
     events_schema = json.loads(
         (
-            Path(__file__).resolve().parents[1] / "docs/52-api/schemas/events-v1.schema.json"
+            Path(__file__).resolve().parents[1] / "docs/52-api/schemas/events-v1.1.schema.json"
         ).read_text(encoding="utf-8")
     )
 

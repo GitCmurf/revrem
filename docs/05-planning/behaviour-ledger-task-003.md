@@ -3,8 +3,8 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.6'
-last_updated: '2026-06-16'
+version: '1.17'
+last_updated: '2026-10-09'
 owner: GitCmurf
 docops_version: '2.0'
 area: planning
@@ -56,6 +56,167 @@ There is no silent third option.
 
 ## Entries
 
+### 2026-10-09 — Reset checks when remediation retries (PR #52)
+
+- **Contract:** human, live TUI presentation.
+- **What changed:** an inner remediation retry resets the preceding failed check
+  result to pending. The next check starts running and reports its own outcome.
+- **Before / After:** `tui_run/inner-retry.svg` replaces the stale failed/done
+  check label with pending checks while remediation runs.
+- **Evidence:** run-state regressions cover running checks and successful retries.
+- **schema_version impact:** none; event and summary formats are unchanged.
+
+### 2026-10-09 — Preserve outcomes when optional telemetry is damaged (PR #52)
+
+- **Contract:** machine, correction within existing nullable summary fields.
+- **What changed:** unreadable event streams and sequence gaps produce empty
+  `model_invocations` and null `tokens`, while the outcome summary is still
+  written. Reused summaries discard stale token totals. Event-level phase and
+  iteration take precedence over identically named payload fields.
+- **Evidence:** summary-write regressions exercise missing, unreadable,
+  discontinuous and token-free streams, plus conflicting payload fields.
+- **schema_version impact:** none; field names and allowed types are unchanged.
+- **CHANGELOG:** Unreleased fixes.
+
+### 2026-10-09 — Isolate the profile-picker snapshot (PR #52)
+
+- **Contract:** human, test-fixture correction only.
+- **What changed:** the profile-picker capture uses an explicit empty user home.
+  The golden SVG no longer contains the developer's ambient `final-pr` profile;
+  project profiles and built-in presets remain visible.
+- **Evidence:** the old snapshot failed on both GitHub Python jobs and locally
+  with user profile discovery isolated. Regenerate only this SVG after isolating
+  its fixture; no application rendering or machine schema changes are intended.
+
+
+
+### 2026-09-02 — Bounded final-review remediation
+
+- **Contract:** machine and human presentation
+- **What changed:** actionable final-review findings can consume a separately
+  configured, bounded recovery pass. Each recovery records an additive
+  `final_review_remediation` iteration marker, retains `review-final.txt`, adds
+  `review-final-recovery-N.txt`, and returns to another final review. Live and
+  terminal views label the numbered work `final recovery N/M` rather than an
+  impossible ordinary iteration beyond `max_iterations`.
+- **Why:** the final audit previously found valid issues but could only stop;
+  operators had to start another run manually even though the loop already had
+  all required triage, remediation, verification, and commit capabilities.
+- **Before / After:** final findings previously terminated with
+  `max_iterations_reached`; with recovery budget remaining they now enter the
+  existing bounded phase path, and retain the old terminal outcome when that
+  independent budget is exhausted.
+- **schema_version impact:** none. Summary iteration fields and `resume_config`
+  are additive under the permissive summary v1.1 schema; event iteration values
+  remain integers, dotted numeric substeps, or `final`.
+- **CHANGELOG:** Unreleased / Added.
+
+### 2026-09-02 — Follow-up recovery and valid detected checks
+
+- **Contract:** human presentation
+- **What changed:** provider timeout classification reads RevRem's stderr
+  timeout marker before truncating provider transcripts. The run monitor keeps
+  its completed-run view and presents an error when a retry or continuation
+  cannot reload a deleted or invalid launched profile. Repository detection
+  only offers `mypy src` where a `src/` directory exists.
+- **Why:** oversized provider events must not turn a non-retryable timeout into
+  an interruption, follow-up actions must remain safe after profile edits, and
+  detected checks must be runnable in the target repository.
+- **schema_version impact:** none.
+
+### 2026-09-01 — Replay safety and inherited-map deletions are durable
+
+- **Contract:** last-run replay and profile working-copy persistence
+- **What changed:** structured last-run replay restores `runtime.full_auto` and
+  `runtime.exec_sandbox` in both the command wizard and TUI. When a TUI save
+  removes entries inherited into `triage.routes` or
+  `runtime.harness_executables`, RevRem writes the complete effective map and a
+  validated `replace_inherited_maps` marker so later resolution cannot merge the
+  deleted entries back.
+- **Why:** replay must not silently relax a previous run's remediation boundary,
+  and a successful Save must reload to the same effective configuration shown to
+  the operator.
+
+
+### 2026-09-01 — Preserve acknowledged cancellation artifacts
+
+- **Contract:** live-run cancellation
+- **What changed:** after a child records a cancellation event, the TUI grants
+  it a separate bounded finalization deadline before force termination.
+- **Why:** terminal summaries are operator-facing artifacts and must survive a
+  controlled cancellation even when normal signal escalation grace is short.
+
+
+### 2026-09-01 — Persist completed remediation in iteration summaries
+
+- **Contract:** machine and human presentation
+- **What changed:** a successful remediation now records `remediated: true` in
+  its iteration summary. Artifact-backed terminal views therefore render the
+  iteration as `remediation done` rather than `remediation skipped`.
+- **Why:** the successful state previously existed only in the live accumulator,
+  leaving replayed summaries unable to distinguish completion from a skipped
+  remediation.
+- **Before / After:** `tests/snapshots/loop_findings_summary.json` gains the
+  additive marker on its completed finding iteration.
+- **schema_version impact:** none. The summary schema permits additive
+  iteration fields; the existing schema version continues to describe it.
+
+
+### 2026-08-31 — RevRem retains commit ownership during remediation
+
+- **Contract:** machine and provider instruction
+- **What changed:** remediation prompts now tell providers not to stage or
+  commit because RevRem owns the verified commit phase. Small prompt budgets
+  retain the mandatory header and an explicit original-review omission marker.
+- **Why:** provider-created commits could otherwise bypass RevRem's configured
+  verification and be mistaken for a successful RevRem commit.
+- **Before / After:** the fixed findings-path fixture's prompt telemetry changes
+  from 1,035 to 1,150 bytes/characters in
+  `tests/snapshots/loop_findings_events.json`; event shape is unchanged.
+- **schema_version impact:** none. Only payload values change; the event schema
+  and field meanings are unchanged.
+- **CHANGELOG:** `[Unreleased]` Fixed entry for remediation commit ownership.
+
+### 2026-07-10 — Hermetic canonical TUI snapshot theme
+
+- **Contract:** human presentation test baseline
+- **What changed:** primary TUI SVG snapshots are captured with color enabled
+  and the `textual-dark` theme, independent of ambient `NO_COLOR` and
+  `TEXTUAL_THEME` values. Light and monochrome modes retain focused smoke tests.
+- **Why:** seven snapshot files had mixed color and monochrome provenance, so
+  identical layouts passed or failed according to the invoking shell.
+- **Before / After:** canonical color bytes replace the contaminated baselines;
+  normalized layout and visible content are unchanged.
+- **schema_version impact:** none. Runtime behavior and artifact schemas are
+  unchanged.
+
+### 2026-09-02 — Version local model invocation telemetry as event v1.1
+
+- **Contract:** machine
+- **What changed:** events that include the additive `model_invocation` kind
+  are emitted as `schema_version: "1.1"`; readers continue to accept frozen
+  `1.0` artifacts.
+- **Why:** v1.0 consumers must reject an event kind that was not part of their
+  contract, while current consumers need a declared compatible minor version.
+- **Before / After:** a provider invocation emitted under `1.0` now emits under
+  `1.1`; the historical v1.0 schema remains unchanged and rejects it.
+- **schema_version impact:** bumped 1.0 -> 1.1 for newly emitted events.
+- **CHANGELOG:** `[Unreleased]` Fixed entry for event-schema compatibility.
+
+### 2026-07-10 — Local model invocation telemetry
+
+- **Contract:** machine and human presentation
+- **What changed:** every completed provider call emits `model_invocation` with
+  phase, harness, requested model and effort, duration, outcome, and optional
+  tokens. Summaries include `model_invocations` and aggregate reported tokens.
+- **Why:** operators need artifact-backed runtime expectations and token-usage
+  coverage for the actual model used by each phase.
+- **Before / After:** event streams gain one event per completed provider call;
+  summaries gain an invocation list and retain `tokens: null` when no call
+  reports usage.
+- **schema_version impact:** originally recorded as additive under v1.0; the
+  corrective v1.1 event-version entry above supersedes that versioning detail.
+
 ### 2026-06-17 — Verb-mediated security-risk negations stay clear
 
 - **Contract:** machine
@@ -68,6 +229,23 @@ There is no silent third option.
 - **Before / After:** `detect_review_status("No actionable correctness,
   security, or maintainability issues were identified. This does not introduce
   a security risk.")` remains `clear` instead of being vetoed as `unknown`.
+- **schema_version impact:** none. The artifact schema is unchanged; this only
+  corrects status classification.
+- **CHANGELOG:** Unreleased / Fixed.
+
+### 2026-09-03 — Narrow correctness-only clear prose is classified
+
+- **Contract:** machine
+- **What changed:** Codex review-status interpretation now recognizes the
+  standalone form "No actionable correctness issues were found" as a clear
+  signal when no affirmative correctness, security, or maintainability finding
+  follows.
+- **Why:** A live cross-repository review returned that exact conclusion after
+  all configured checks passed, but RevRem stopped with `review_unknown` because
+  the phrase was narrower than the existing all-scope clear corpus.
+- **Before / After:** the observed clear review now classifies as `clear`; a
+  contrastive continuation such as "but a security risk remains" still fails
+  closed as `unknown`.
 - **schema_version impact:** none. The artifact schema is unchanged; this only
   corrects status classification.
 - **CHANGELOG:** Unreleased / Fixed.
@@ -1042,6 +1220,7 @@ complete set, drawn from the left-column conditions above, is:
 | `config.commit_on_hook_failure` | `str` | config |
 | `config.triage_enabled` | `bool` | config |
 | `config.final_review` | `bool` | config |
+| `config.final_review_remediation_passes` | `int` | config |
 
 Config fields are read-only and can be passed as a bundle. The phase-result
 fields (`review_exc`, `triage_exc`, etc.) represent "what happened this phase"
@@ -1077,12 +1256,13 @@ an unledgered transition.
 | Engine type | Ledger row(s) | Meaning |
 |---|---|---|
 | `LoopStarted` | R1, R2 | Begin an iteration by requesting `RunReview(is_final=False)`. |
-| `ReviewDone` | R3, E1, F2-F6 | Review result gates review failure, early clear, triage/remediation, or final outcomes. |
+| `ReviewDone` | R3, E1, F2-F6, FR1-FR2 | Review result gates review failure, early clear, triage/remediation, final-review recovery, or terminal outcomes. |
 | `TriageDone` | T2-T6 | Triage either exits clear/failed or requests remediation. |
 | `RemediationDone` | M2-M3, CK1 | Remediation failure exits; success requests checks. |
 | `ChecksDone` | CK1, L1-L2, CM1 | Checks update pending failures, then either request commit or advance review. |
 | `CommitDone` | CM1-CM7, L3-L4 | Commit status either exits, retries via hook output, or advances review. |
 | `NoFinalReview` | NF1 | Exhausted loop without final review exits unknown. |
+| `BeginFinalReviewRemediation` | FR1 | Consume one independently bounded recovery pass and route final findings through the normal triage/remediation path. |
 | `Continue` | L1-L4 | Advance to the next iteration. |
 | `RunReview` | R1, R2, F1 | Execute iteration or final review. |
 | `RunTriage` | T1 | Execute triage for review findings. |
@@ -1090,7 +1270,7 @@ an unledgered transition.
 | `RunChecks` | CK1 | Execute verification checks after remediation. |
 | `RunCommit` | CM1-CM7 | Execute optional commit when checks are clear. |
 | `RetryViaCommitHook` | CM3, L4 | Feed retryable commit hook output into the next remediation iteration. |
-| `Stop` | P1, R3, E1, T2-T3, T6, M3, CM2, CM4-CM5, CM7, F2-F6, NF1, X1-X2 | Terminal outcome wrapper applied by the shell. |
+| `Stop` | P1, R3, E1, T2-T3, T6, M3, CM2, CM4-CM5, CM7, F2-F6, FR2, NF1, X1-X2 | Terminal outcome wrapper applied by the shell. |
 
 #### `_run_loop` pre-loop guards (before state is initialised)
 
@@ -1185,10 +1365,17 @@ an unledgered transition.
 |---|---|---|---|
 | F1 | final review runs successfully | `latest_review_excerpt=…` | sets `status` and `final_review` for subsequent branches |
 | F2 | `RuntimeError` from final review | `final_status=error`, `stopped_reason=review_failed`, `error=str(exc)`, `iterations.append({iteration:"final", review_failed:True})` | `raise RunLoopFailed` (summary written) |
-| F3 | `pending_check_failures` after final review | `final_status=findings`, `pending_check_failures=True`, `stopped_reason=max_iterations_reached_with_check_failures` | `return summary` |
+| F3 | `pending_check_failures` after final review and recovery is not selected | `final_status=findings`, `pending_check_failures=True`, `stopped_reason=max_iterations_reached_with_check_failures` | `return summary` |
 | F4 | `status == "clear"` after final review (no pending check failures) | `final_status=clear`, `stopped_reason=review_clear` | `return summary` |
-| F5 | `status == "findings"` after final review | `final_status=findings`, `stopped_reason=max_iterations_reached` | `return summary` |
+| F5 | `status == "findings"` after final review and recovery is disabled | `final_status=findings`, `stopped_reason=max_iterations_reached` | `return summary` |
 | F6 | `status == "unknown"` after final review | `final_status=unknown`, `stopped_reason=max_iterations_reached`, appends `{iteration:"final", review_status:"unknown"}` | `return summary` |
+
+#### Post-loop — bounded final-review recovery
+
+| # | Branch condition | State mutation | Outcome |
+|---|---|---|---|
+| FR1 | final review reports findings and `iteration - max_iterations < final_review_remediation_passes` | increments the internal iteration, appends `final_review_remediation=true`, preserves the final-review artifact as the next triage/remediation source, and clears per-pass retry/routing state | enter the normal triage/remediation/check/commit path, then run a fresh final review |
+| FR2 | a recovery final review still reports findings after the recovery limit is consumed | `final_status=findings`, `stopped_reason=max_iterations_reached` | `return summary` |
 
 #### Post-loop — no final review (`not config.final_review`)
 

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from collections.abc import Iterator
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-from code_review_loop import __version__, artifacts, budgets, harnesses, run_history
+from code_review_loop import __version__, artifacts, budgets, events, harnesses, run_history
 from code_review_loop.adapters.phase_support import write_artifact
 from code_review_loop.clock import SYSTEM_CLOCK, Clock, utc_iso
 from code_review_loop.config import LoopConfig
@@ -118,6 +119,10 @@ def commit_message_side_effects(artifact_dir: Path) -> list[dict[str, object]]:
 
 def artifact_sort_key(path: Path) -> tuple[str, int, str]:
     name = path.name
+    final_review_match = re.fullmatch(r"review-final(?:-recovery-(\d+))?(?:-[^.]+)?\.[^.]+", name)
+    if final_review_match:
+        retry = int(final_review_match.group(1) or 0)
+        return ("review", 1_000_000 + retry, name)
     match = re.search(r"-(\d+)(?:-|\.txt$)", name)
     if match:
         return (name.split("-", 1)[0], int(match.group(1)), name)
@@ -142,6 +147,7 @@ def write_summary(
     add_artifact_paths(summary, config)
     add_triage_diagnostics(summary, config.artifact_dir)
     add_phase_diagnostics(summary, config.artifact_dir)
+    add_model_invocations(summary, config.artifact_dir)
     if budget_state is not None or "budgets" not in summary:
         summary["budgets"] = summary_budget_payload(config, budget_state=budget_state)
     add_timing_warnings(summary)
@@ -150,6 +156,37 @@ def write_summary(
         summary_detail = summary.get("stopped_reason") or summary.get("final_status") or "summary"
         event_sink.emit("summary", payload={"summary": str(summary_detail)})
     artifacts.write_json_artifact(config.artifact_dir, "summary.json", summary)
+
+
+def add_model_invocations(summary: dict[str, object], artifact_dir: Path) -> None:
+    event_path = artifact_dir / events.EVENTS_FILENAME
+    # Recompute telemetry each time; a reused summary must not retain old totals.
+    summary["model_invocations"] = []
+    summary["tokens"] = None
+    try:
+        if not event_path.is_file():
+            return
+        recorded, _truncated = events.read_events(event_path)
+    except (OSError, ValueError):
+        # Optional telemetry must not prevent the authoritative outcome artifact.
+        return
+    invocations = [
+        {**event.payload, "phase": event.phase, "iteration": event.iteration}
+        for event in recorded
+        if event.kind == "model_invocation"
+    ]
+    summary["model_invocations"] = invocations
+    token_values: list[int] = []
+    for item in invocations:
+        value = item.get("tokens")
+        if isinstance(value, int) and not isinstance(value, bool):
+            token_values.append(value)
+    if token_values:
+        summary["tokens"] = {
+            "total": sum(token_values),
+            "reported_invocations": len(token_values),
+            "total_invocations": len(invocations),
+        }
 
 
 def write_invocation_artifact(config: LoopConfig, summary: dict[str, object]) -> None:
@@ -299,10 +336,7 @@ def triage_parsing_warning_diagnostic(message: str) -> dict[str, object]:
 
 def _is_fallback_fingerprint_warning(message: str) -> bool:
     normalized = message.lower()
-    return (
-        ("f1:" in normalized or "f1 " in normalized)
-        and "review-comment:" in normalized
-    ) or (
+    return (("f1:" in normalized or "f1 " in normalized) and "review-comment:" in normalized) or (
         "normalized needs_more_info missing fingerprint" in normalized
         and "review-comment:" in normalized
     )
@@ -379,6 +413,9 @@ def add_summary_contract_fields(
     summary.setdefault("harness", config.review_harness)
     summary.setdefault("harness_version", None)
     summary.setdefault("command_line", list(config.command_line) if config.command_line else None)
+    command_line = summary.get("command_line")
+    if isinstance(command_line, list) and all(isinstance(part, str) for part in command_line):
+        summary.setdefault("command", shlex.join(command_line))
     summary.setdefault("phase_config", phase_config_payload(config))
     coverage = external_review_coverage_payload(config.artifact_dir)
     if coverage:
@@ -456,7 +493,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
         "harness": config.triage_harness,
         "model": config.triage_model,
         "reasoning_effort": triage_effort,
-        **_provider_effort_fields(config.triage_harness, triage_effort),
+        **_provider_effort_fields(config.triage_harness, triage_effort, cwd=config.cwd),
         "timeout_seconds": config.triage_timeout_seconds_display,
         "contract": config.triage_contract,
         "routing_enabled": (
@@ -487,7 +524,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "harness": config.review_harness,
             "model": config.review_model or config.model,
             "reasoning_effort": review_effort,
-            **_provider_effort_fields(config.review_harness, review_effort),
+            **_provider_effort_fields(config.review_harness, review_effort, cwd=config.cwd),
             "timeout_seconds": config.review_timeout_seconds_display,
             "sandbox": "read-only",
             "source": config.phase_config_sources.get("review", "direct-config"),
@@ -498,7 +535,9 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "harness": config.remediation_harness,
             "model": config.remediation_model or config.model,
             "reasoning_effort": remediation_effort,
-            **_provider_effort_fields(config.remediation_harness, remediation_effort),
+            **_provider_effort_fields(
+                config.remediation_harness, remediation_effort, cwd=config.cwd
+            ),
             "timeout_seconds": config.remediation_timeout_seconds_display,
             "sandbox": config.exec_sandbox,
             "source": config.phase_config_sources.get("remediation", "direct-config"),
@@ -509,7 +548,7 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
             "harness": config.commit_message_harness,
             "model": config.commit_message_model,
             "reasoning_effort": commit_effort,
-            **_provider_effort_fields(config.commit_message_harness, commit_effort),
+            **_provider_effort_fields(config.commit_message_harness, commit_effort, cwd=config.cwd),
             "requested_reasoning_effort": config.commit_reasoning_effort_requested,
             "reasoning_effort_adjustment": config.commit_reasoning_effort_adjustment,
             "timeout_seconds": config.commit_timeout_seconds_display,
@@ -540,8 +579,10 @@ def phase_config_payload(config: LoopConfig) -> dict[str, object]:
     }
 
 
-def _provider_effort_fields(harness: str, effort: str | None) -> dict[str, object]:
-    supported = harnesses.reasoning_effort_supported(harness)
+def _provider_effort_fields(
+    harness: str, effort: str | None, *, cwd: Path | None = None
+) -> dict[str, object]:
+    supported = harnesses.reasoning_effort_supported(harness, cwd=cwd)
     return {
         "reasoning_effort_supported": supported,
         "provider_reasoning_effort": effort if supported else None,

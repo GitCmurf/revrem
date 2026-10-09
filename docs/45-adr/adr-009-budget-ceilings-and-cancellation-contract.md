@@ -3,8 +3,8 @@ document_id: REVREM-ADR-009
 type: ADR
 title: Budget Ceilings And Cancellation Contract
 status: Draft
-version: '0.1'
-last_updated: '2026-05-13'
+version: '0.3'
+last_updated: '2026-09-02'
 owner: __TBD__
 docops_version: '2.0'
 area: architecture
@@ -51,6 +51,14 @@ call, RevRem emits `cost_ceiling_hit`, writes `summary.json`, writes
 `events.jsonl`, appends public `artifact_write` events, and exits through the
 stable budget exit path.
 
+Iteration topology is bounded independently of cost ceilings. Ordinary work is
+capped by `pipeline.max_iterations`; optional remediation initiated by
+final-review findings is capped by
+`pipeline.final_review_remediation_passes` and returns to a fresh final review
+after each recovery. Both declared bounds contribute to the core engine's step
+ceiling. The recovery default is `0`, so enabling final review alone never
+silently adds write-capable model calls.
+
 Token and USD usage are represented as `null` until a harness reports them, and
 then accumulated from `cost_charge` events. They are never silently treated as
 `0` before the first reported charge, because unsupported accounting and zero
@@ -66,6 +74,11 @@ cancellation, but it keeps the same best-effort artifact and exit-code path.
 The subprocess wrapper already kills the active child process group when
 unwinding from an interrupt, so cancellation does not leave the model/check
 process running under normal local execution.
+
+When the live TUI later escalates cancellation to descendants, it records each
+descendant's PID together with its OS process-start identity. It revalidates
+that identity immediately before every delayed TERM or KILL signal; a PID that
+has exited, been reused, or cannot be identified is never signalled.
 
 Resume remains part of this ADR's contract but is not complete in the first
 implementation slices. The intended semantics remain:

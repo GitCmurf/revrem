@@ -72,6 +72,14 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
             if not isinstance(item, dict):
                 continue
             iteration = item.get("iteration")
+            configured_max = summary.get("max_iterations")
+            if (
+                item.get("final_review_remediation") is True
+                and isinstance(iteration, int)
+                and isinstance(configured_max, int)
+                and not isinstance(configured_max, bool)
+            ):
+                iteration = f"final recovery {max(1, iteration - configured_max)}"
             review_status = item.get("review_status", "unknown")
             check_failures = item.get("check_failures")
             check_text = (
@@ -150,6 +158,7 @@ def format_terminal_summary(summary: dict[str, object]) -> str:
                 cmd_list = retry.get("command")
                 if isinstance(cmd_list, list) and all(isinstance(x, str) for x in cmd_list):
                     import shlex
+
                     lines.append(f"Retry final review: {shlex.join(cmd_list)}")
             elif isinstance(retry, str) and retry:
                 lines.append(f"Retry final review: {retry}")
@@ -378,13 +387,25 @@ def _phase_source_text(value: dict[object, object]) -> str | None:
 def _resume_command(summary: dict[str, object], review_path: str) -> str:
     resume_config = summary.get("resume_config")
     config = resume_config if isinstance(resume_config, dict) else {}
-    command = ["./.venv/bin/revrem"]
+    command = [_resume_executable(summary)]
     base = config.get("base") or summary.get("base")
     if isinstance(base, str) and base:
         command.extend(["--base", base])
     max_iterations = config.get("max_iterations") or summary.get("max_iterations")
     if isinstance(max_iterations, int):
         command.extend(["--max-iterations", str(max_iterations)])
+    final_review_remediation_passes = config.get("final_review_remediation_passes")
+    if (
+        isinstance(final_review_remediation_passes, int)
+        and not isinstance(final_review_remediation_passes, bool)
+        and final_review_remediation_passes > 0
+    ):
+        command.extend(
+            [
+                "--final-review-remediation-passes",
+                str(final_review_remediation_passes),
+            ]
+        )
     profile = summary.get("profile")
     if isinstance(profile, str) and profile:
         command.extend(["--profile", profile])
@@ -395,6 +416,9 @@ def _resume_command(summary: dict[str, object], review_path: str) -> str:
     timeout_seconds = config.get("timeout_seconds")
     if isinstance(timeout_seconds, int | float):
         command.extend(["--timeout-seconds", _format_number(timeout_seconds)])
+    full_auto = config.get("full_auto")
+    if isinstance(full_auto, bool):
+        command.append("--full-auto" if full_auto else "--no-full-auto")
     _append_phase_resume_overrides(command, config, summary)
     commit_after = config.get("commit_after_remediation")
     if isinstance(commit_after, bool):
@@ -406,6 +430,19 @@ def _resume_command(summary: dict[str, object], review_path: str) -> str:
     if isinstance(hook_policy, str) and hook_policy:
         command.extend(["--commit-on-hook-failure", hook_policy])
     return shlex.join(command)
+
+
+def _resume_executable(summary: Mapping[str, object]) -> str:
+    command_line = summary.get("command_line")
+    if (
+        isinstance(command_line, list)
+        and command_line
+        and isinstance(command_line[0], str)
+        and command_line[0]
+        and "/" not in command_line[0]
+    ):
+        return command_line[0]
+    return "revrem"
 
 
 def _append_phase_resume_overrides(

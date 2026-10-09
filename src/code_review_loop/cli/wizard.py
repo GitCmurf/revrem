@@ -5,22 +5,37 @@ from __future__ import annotations
 import json
 import shlex
 import sys
+import tempfile
 import tomllib
 from dataclasses import dataclass, replace
 from os import environ
 from pathlib import Path
 from typing import TextIO
 
-from code_review_loop import policy, profiles, routing_timeouts, run_history
+from code_review_loop import (
+    harnesses,
+    model_catalog,
+    policy,
+    profiles,
+    resume,
+    routing_timeouts,
+    run_recovery,
+)
 from code_review_loop.adapters.commit import phase_support
 from code_review_loop.adapters.remediation import build_remediation_command
 from code_review_loop.adapters.review import build_review_command
 from code_review_loop.adapters.triage import build_triage_command
+from code_review_loop.check_presets import detect_check_presets as _detect_check_presets
 from code_review_loop.cli import args as cli_args
 from code_review_loop.cli.config_builder import build_loop_config
+from code_review_loop.cli.config_support import (
+    PendingReviewCandidate,
+    current_git_state_for_latest,
+    find_pending_review_candidate,
+)
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.routing_types import ResolvedRoute
-from code_review_loop.repo_roots import repo_root_or_cwd
+from code_review_loop.prompts_composer import trim_for_prompt
 
 
 @dataclass(frozen=True)
@@ -42,8 +57,10 @@ class WizardState:
     profile: profiles.Profile
     base: str
     max_iterations: int
+    inner_check_retries: int
     checks: tuple[str, ...]
     final_review: bool
+    final_review_remediation_passes: int
     triage_enabled: bool
     routing_enabled: bool
     routing_default_route: str
@@ -70,26 +87,25 @@ class WizardState:
     commit_timeout_seconds: str = ""
     check_timeout_seconds: str = ""
     commit_after_remediation: bool = False
+    full_auto: bool = True
+    exec_sandbox: str = "workspace-write"
     progress_style: str = "compact"
     summary_format: str = "text"
     max_wall_seconds: str = ""
     pending_review: str = "profile"
+    initial_review_file: str = ""
+    initial_review_mode: str = ""
     origin_label: str = ""
     origin_command: str = ""
     stale_triage_reasoning_effort: str = ""
+    profile_snapshot_path: Path | None = None
 
 
 @dataclass(frozen=True)
 class LastRunLookup:
     state: WizardState | None
     skipped_reason: str | None = None
-
-
-@dataclass(frozen=True)
-class CheckPreset:
-    key: str
-    label: str
-    checks: tuple[str, ...]
+    summary_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +119,7 @@ class PhasePreview:
     effort_source: str | None = None
     source: str | None = None
     unresolved_model: bool = False
+    allows_provider_default: bool = False
     blocked_reason: str | None = None
 
 
@@ -120,11 +137,14 @@ class RunPreview:
     checks: tuple[str, ...]
     check_timeout: float | int | str | None
     final_review: bool
+    final_review_remediation_passes: int
     commit_message: PhasePreview | None
     summary_format: str
     progress_style: str
     budget_max_wall_seconds: float | int | str | None
     pending_review: str
+    initial_review_file: str | None
+    initial_review_mode: str | None
 
     @property
     def has_unresolved_models(self) -> bool:
@@ -212,7 +232,7 @@ class _Wizard:
                 raise WizardCancelled
             if next_step == "config":
                 choice = self._choose_profile()
-                state = _initial_state(choice)
+                state = _initial_state(choice, cwd=self.cwd)
                 continue
             if next_step == "settings":
                 self._common_options(state)
@@ -282,12 +302,13 @@ class _Wizard:
 
     def _starting_state(self) -> WizardState:
         default_choice = self._default_profile_choice()
-        default_state = _initial_state(default_choice)
+        default_state = _initial_state(default_choice, cwd=self.cwd)
         last_lookup = _last_run_state(self.cwd)
         last_state = last_lookup.state
         if last_state is None:
             if last_lookup.skipped_reason:
                 self._print_dim(f"Last run skipped: {last_lookup.skipped_reason}")
+            self._apply_startup_pending_review(default_state)
             return default_state
         selected = self._choice(
             "Start from which settings?",
@@ -300,10 +321,102 @@ class _Wizard:
             help_text="Enter starts from the last compatible RevRem run in this repository.",
         )
         if selected == "last":
+            self._apply_startup_pending_review(last_state)
             return last_state
         if selected == "config":
-            return _initial_state(self._choose_profile())
+            state = _initial_state(self._choose_profile(), cwd=self.cwd)
+            self._apply_startup_pending_review(state)
+            return state
+        self._apply_startup_pending_review(default_state)
         return default_state
+
+    def _apply_startup_pending_review(self, state: WizardState) -> None:
+        if state.initial_review_file or state.pending_review == "ignore":
+            return
+        try:
+            config = _config_for_state(state, self.cwd)
+        except (OSError, RuntimeError, SystemExit, ValueError):
+            return
+        compatible = _pending_review_candidate_for_config(config, compatible=True)
+        mode = "prompt" if state.pending_review == "profile" else state.pending_review
+        if compatible is not None:
+            if mode == "auto":
+                state.initial_review_file = str(compatible.path)
+                state.initial_review_mode = "compatible"
+                state.pending_review = "ignore"
+                self._print_key_value("Pending review", f"using {compatible.path}")
+                return
+            if mode == "prompt":
+                self._prompt_for_startup_pending_review(state, compatible, compatible=True)
+            return
+        if mode != "prompt":
+            return
+        stale = _pending_review_candidate_for_config(config, compatible=False)
+        if stale is not None:
+            self._prompt_for_startup_pending_review(state, stale, compatible=False)
+
+    def _prompt_for_startup_pending_review(
+        self,
+        state: WizardState,
+        candidate: PendingReviewCandidate,
+        *,
+        compatible: bool,
+    ) -> None:
+        self._print_pending_review_summary(candidate, compatible=compatible)
+        prompt = (
+            "Use this review? [u]se / [d]etails / [f]resh / [c]ancel: "
+            if compatible
+            else "Validate this older review? [v]alidate / [d]etails / start [f]resh review / [c]ancel: "
+        )
+        while True:
+            choice = self._read(prompt).strip().lower()
+            if choice in {"u", "use", "v", "validate", "y", "yes"}:
+                state.initial_review_file = str(candidate.path)
+                state.initial_review_mode = "compatible" if compatible else "stale"
+                state.pending_review = "ignore"
+                return
+            if choice in {"d", "detail", "details", "more"}:
+                self._print_dim(
+                    "\nPending review detail:\n"
+                    f"{trim_for_prompt(candidate.excerpt, state.profile.runtime.terminal_excerpt_chars)}\n"
+                    f"Artifact: {candidate.path}\n"
+                )
+                continue
+            if choice in {"f", "fresh", "n", "no", "skip"}:
+                state.pending_review = "ignore"
+                return
+            if choice in {"c", "cancel", "q", "quit"}:
+                raise WizardCancelled
+            print("Choose u, d, f, or c.", file=self.stderr)
+
+    def _print_pending_review_summary(
+        self, candidate: PendingReviewCandidate, *, compatible: bool
+    ) -> None:
+        status_parts = [
+            part
+            for part in (
+                candidate.final_status,
+                candidate.stopped_reason,
+                candidate.error,
+            )
+            if part
+        ]
+        status = " · ".join(status_parts) if status_parts else "previous non-clear run"
+        excerpt = trim_for_prompt(candidate.excerpt, 500).replace("\n", " ").strip()
+        if compatible:
+            heading = "RevRem found compatible pending review feedback before the wizard menus."
+        else:
+            heading = (
+                "RevRem found an older review from a different HEAD/base before the wizard menus. "
+                "Validate it only if you want RevRem to check whether that older finding still applies."
+            )
+        self._print_heading("Pending review")
+        self._print_dim(heading)
+        self._print_key_value("Review", str(candidate.path))
+        self._print_key_value("Run", str(candidate.run_dir))
+        self._print_key_value("Status", status)
+        if excerpt:
+            self._print_dim(f"Excerpt: {excerpt}")
 
     def _choose_profile(self) -> WizardProfileChoice:
         resolved_profiles = tuple(
@@ -359,6 +472,13 @@ class _Wizard:
 
         final_review = self._yes_no("Run final review after remediation?", state.final_review)
         state.final_review = final_review
+
+        final_review_remediation_passes = self._text(
+            "Additional remediation passes after final-review findings",
+            default=str(state.final_review_remediation_passes),
+            validator=_non_negative_int,
+        )
+        state.final_review_remediation_passes = int(final_review_remediation_passes)
 
         progress = self._choice(
             "Progress style",
@@ -523,7 +643,16 @@ class _Wizard:
         effort_attr: str,
     ) -> None:
         implemented_harnesses = tuple(
-            value for value, spec in profiles.HARNESS_REGISTRY.items() if spec.implemented
+            sorted(
+                {
+                    *(
+                        value
+                        for value, spec in profiles.HARNESS_REGISTRY.items()
+                        if spec.implemented
+                    ),
+                    *model_catalog.load_catalog(self.cwd).harnesses,
+                }
+            )
         )
         harness = self._choice(
             f"{label.capitalize()} harness",
@@ -531,16 +660,19 @@ class _Wizard:
             default=getattr(state, harness_attr),
         )
         setattr(state, harness_attr, harness)
-        setattr(
-            state,
-            model_attr,
-            self._model_text(
-                f"{label.capitalize()} model (blank = profile/default)",
-                default=getattr(state, model_attr),
-            ),
+        catalog_models = model_catalog.load_catalog(self.cwd).models_for(harness)
+        if catalog_models:
+            self._print_dim(
+                "Catalog: "
+                + ", ".join(f"{item.id} [{'/'.join(item.efforts)}]" for item in catalog_models)
+            )
+        selected_model = self._model_text(
+            f"{label.capitalize()} model (blank = profile/provider default)",
+            default=getattr(state, model_attr),
         )
-        effort_choices: tuple[str, ...] = cli_args.REASONING_EFFORT_CHOICES
-        if label == "triage" and harness == "codex":
+        setattr(state, model_attr, selected_model)
+        effort_choices = model_catalog.effort_choices(harness, selected_model or None, cwd=self.cwd)
+        if label == "triage" and _is_codex_triage_harness(harness, cwd=self.cwd):
             effort_choices = tuple(value for value in effort_choices if value != "minimal")
             self._print_dim(
                 "Codex triage starts at low effort; minimal is provider-incompatible with inherited tools."
@@ -549,6 +681,7 @@ class _Wizard:
                 _repair_stale_codex_triage_reasoning_effort(
                     harness=harness,
                     reasoning_effort=state.triage_reasoning_effort,
+                    cwd=self.cwd,
                 )
             )
             if stale_triage_reasoning_effort:
@@ -568,7 +701,11 @@ class _Wizard:
             + tuple((value, value) for value in effort_choices),
             default=effort_default,
         )
-        setattr(state, effort_attr, _selected_effort_value(state, label, effort))
+        setattr(
+            state,
+            effort_attr,
+            _selected_effort_value(state, label, effort, cwd=self.cwd),
+        )
 
     def _effective_effort(self, state: WizardState, label: str) -> str:
         try:
@@ -717,7 +854,10 @@ class _Wizard:
                 if action == "dry-run" and "--dry-run" not in argv:
                     argv.append("--dry-run")
                 validation_argv = list(argv)
-                if action in {"run", "print", "save-profile"} and "--dry-run" not in validation_argv:
+                if (
+                    action in {"run", "print", "save-profile"}
+                    and "--dry-run" not in validation_argv
+                ):
                     validation_argv.append("--dry-run")
 
     def _choice(
@@ -919,7 +1059,7 @@ def _profile_command(profile_name: str | None) -> tuple[str, ...]:
     return ("revrem",)
 
 
-def _initial_state(choice: WizardProfileChoice) -> WizardState:
+def _initial_state(choice: WizardProfileChoice, *, cwd: Path | None = None) -> WizardState:
     profile = choice.profile
     triage_reasoning_effort = profile.triage.reasoning_effort or ""
     stale_triage_reasoning_effort = ""
@@ -928,6 +1068,7 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
             _repair_stale_codex_triage_reasoning_effort(
                 harness=profile.triage.harness,
                 reasoning_effort=triage_reasoning_effort,
+                cwd=cwd,
             )
         )
     return WizardState(
@@ -935,8 +1076,10 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
         profile=profile,
         base=profile.pipeline.base,
         max_iterations=profile.pipeline.max_iterations,
+        inner_check_retries=profile.runtime.inner_check_retries,
         checks=profile.pipeline.checks,
         final_review=profile.pipeline.final_review,
+        final_review_remediation_passes=(profile.pipeline.final_review_remediation_passes),
         triage_enabled=profile.triage.enabled,
         routing_enabled=profile.triage.routing.enabled and bool(profile.triage.routes),
         routing_default_route=profile.triage.routing.default_route,
@@ -955,6 +1098,8 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
         commit_message_model=profile.commit.message_model or "",
         commit_reasoning_effort=profile.commit.reasoning_effort or "",
         commit_after_remediation=profile.commit.enabled,
+        full_auto=profile.runtime.full_auto,
+        exec_sandbox=profile.runtime.exec_sandbox,
         progress_style=profile.output.progress_style,
         summary_format=profile.output.summary_format,
         stale_triage_reasoning_effort=stale_triage_reasoning_effort,
@@ -962,34 +1107,24 @@ def _initial_state(choice: WizardProfileChoice) -> WizardState:
 
 
 def _last_run_state(cwd: Path) -> LastRunLookup:
-    skipped_reason: str | None = None
-    # Normalize both paths to repository roots so subdirectory invocations can
-    # reuse the same repository's last run configuration.
-    normalized_cwd = repo_root_or_cwd(cwd)
-    for record in run_history.read_history():
-        record_cwd = record.get("cwd")
-        if not isinstance(record_cwd, str):
-            continue
-        if repo_root_or_cwd(Path(record_cwd)) != normalized_cwd:
-            continue
-        summary_path = record.get("summary_path")
-        if not isinstance(summary_path, str) or not summary_path:
-            skipped_reason = "history record has no summary path"
-            continue
-        path = Path(summary_path)
-        if not path.is_absolute():
-            path = Path(record_cwd) / path
-        if not path.is_file():
-            skipped_reason = f"summary missing: {path}"
-            continue
-        state = _state_from_summary(path, cwd)
-        if state is None:
-            skipped_reason = f"summary is not replayable: {path}"
-            continue
-        if _state_is_previewable(state, cwd):
-            return LastRunLookup(state=state)
-        skipped_reason = f"settings are no longer previewable: {path}"
-    return LastRunLookup(state=None, skipped_reason=skipped_reason)
+    latest = run_recovery.latest_summary(cwd)
+    path = latest.summary_path
+    if path is None:
+        return LastRunLookup(state=None, skipped_reason=latest.skipped_reason)
+    state = _state_from_summary(path, cwd)
+    if state is None:
+        return LastRunLookup(
+            state=None,
+            skipped_reason=f"newest summary is not replayable: {path}",
+            summary_path=path,
+        )
+    if _state_is_previewable(state, cwd):
+        return LastRunLookup(state=state, summary_path=path)
+    return LastRunLookup(
+        state=None,
+        skipped_reason=f"newest settings are no longer previewable: {path}",
+        summary_path=path,
+    )
 
 
 def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
@@ -997,6 +1132,12 @@ def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
+    resume_config = summary.get("resume_config")
+    if isinstance(resume_config, dict):
+        state = _state_from_resume_config(resume_config, summary, cwd)
+        if state is not None:
+            return state
+
     command_line = summary.get("command_line")
     if not isinstance(command_line, list) or not command_line:
         invocation = summary.get("invocation")
@@ -1016,6 +1157,165 @@ def _state_from_summary(summary_path: Path, cwd: Path) -> WizardState | None:
     return state
 
 
+def _state_from_resume_config(
+    payload: dict[object, object], summary: dict[object, object], cwd: Path
+) -> WizardState | None:
+    """Restore editable settings from the structured, non-display run contract.
+
+    ``command_line`` is intentionally redacted for diagnostics and may therefore
+    contain values that cannot be replayed.  ``resume_config`` is the canonical
+    resolved configuration captured by the runner and is safe to use here.
+    Initial-review selection is deliberately excluded: pending-review discovery
+    owns that independent decision for the next run.
+    """
+    profile_name = payload.get("profile_name")
+    if not isinstance(profile_name, str) or not profile_name:
+        summary_profile = summary.get("profile")
+        profile_name = summary_profile if isinstance(summary_profile, str) else None
+    try:
+        if profile_name:
+            profile = profiles.resolve_profile(profile_name, cwd=cwd, require_implemented=False)
+        else:
+            profile = profiles.resolve_defaults(cwd=cwd, require_implemented=False)
+    except (OSError, ValueError):
+        return None
+
+    original_profile = profile
+    try:
+        profile = resume.rehydrate_profile_triage(profile, payload)
+    except ValueError:
+        return None
+
+    snapshot_path = None
+    if profile.triage != original_profile.triage:
+        # CLI flags cannot encode a route table. Retain the restored profile for
+        # preview, copied commands, and launch instead of reloading ambient routes.
+        profile_name = profile_name or "wizard-last-run"
+        profile = replace(profile, name=profile_name)
+        raw_profile: dict[str, object] = {}
+        if profiles.profile_runtime_key_explicit(
+            original_profile.name, cwd, "external_review_input_chars"
+        ):
+            raw_profile = {
+                "runtime": {
+                    "external_review_input_chars": profile.runtime.external_review_input_chars
+                }
+            }
+        snapshot_text = profiles.profile_to_toml(
+            profile,
+            include_wrapper=True,
+            omit_builtin_defaults=True,
+            raw_profile=raw_profile,
+        )
+        try:
+            directory = cwd / ".revrem" / "tmp" / "wizard"
+            directory.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", prefix="last-run-", suffix=".toml",
+                dir=directory, delete=False,
+            ) as snapshot:
+                snapshot.write(snapshot_text)
+                snapshot_path = Path(snapshot.name)
+        except OSError:
+            return None
+
+    state = _initial_state(WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd)
+    state.profile_snapshot_path = snapshot_path
+
+    def text(key: str) -> str | None:
+        value = payload.get(key)
+        return value if isinstance(value, str) else None
+
+    def number_text(key: str) -> str | None:
+        value = payload.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return None
+        return f"{value:g}"
+
+    def boolean(key: str) -> bool | None:
+        value = payload.get(key)
+        return value if isinstance(value, bool) else None
+
+    def assign_text(attribute: str, key: str) -> None:
+        value = text(key)
+        if value is not None:
+            setattr(state, attribute, value)
+
+    base = text("base")
+    if base is not None:
+        state.base = base
+    max_iterations = payload.get("max_iterations")
+    if isinstance(max_iterations, int) and not isinstance(max_iterations, bool):
+        state.max_iterations = max_iterations
+    final_review_remediation_passes = payload.get("final_review_remediation_passes")
+    if isinstance(final_review_remediation_passes, int) and not isinstance(
+        final_review_remediation_passes, bool
+    ):
+        state.final_review_remediation_passes = final_review_remediation_passes
+    inner_check_retries = payload.get("inner_check_retries")
+    if isinstance(inner_check_retries, int) and not isinstance(inner_check_retries, bool):
+        state.inner_check_retries = inner_check_retries
+    checks = payload.get("check_commands")
+    if isinstance(checks, list) and all(isinstance(item, str) for item in checks):
+        state.checks = tuple(checks)
+    for attribute, key in (
+        ("final_review", "final_review"),
+        ("triage_enabled", "triage_enabled"),
+        ("routing_enabled", "routing_enabled"),
+        ("routing_strict", "routing_strict"),
+        ("allow_model_escalation", "allow_model_escalation"),
+        ("commit_after_remediation", "commit_after_remediation"),
+        ("full_auto", "full_auto"),
+    ):
+        value = boolean(key)
+        if value is not None:
+            setattr(state, attribute, value)
+    for attribute, key in (
+        ("routing_default_route", "routing_default_route"),
+        ("review_harness", "review_harness"),
+        ("review_model", "review_model"),
+        ("review_reasoning_effort", "review_reasoning_effort"),
+        ("triage_harness", "triage_harness"),
+        ("triage_model", "triage_model"),
+        ("triage_reasoning_effort", "triage_reasoning_effort"),
+        ("remediation_harness", "remediation_harness"),
+        ("remediation_model", "remediation_model"),
+        ("remediation_reasoning_effort", "remediation_reasoning_effort"),
+        ("commit_message_harness", "commit_message_harness"),
+        ("commit_message_model", "commit_message_model"),
+        ("commit_reasoning_effort", "commit_reasoning_effort"),
+        ("progress_style", "progress_style"),
+        ("exec_sandbox", "exec_sandbox"),
+    ):
+        assign_text(attribute, key)
+    for attribute, key in (
+        ("timeout_seconds", "timeout_seconds"),
+        ("review_timeout_seconds", "review_timeout_seconds"),
+        ("triage_timeout_seconds", "triage_timeout_seconds"),
+        ("remediation_timeout_seconds", "remediation_timeout_seconds"),
+        ("commit_timeout_seconds", "commit_timeout_seconds"),
+        ("max_wall_seconds", "max_wall_seconds"),
+    ):
+        number_value = number_text(key)
+        if number_value is not None:
+            setattr(state, attribute, number_value)
+    phase_config = payload.get("phase_config")
+    if isinstance(phase_config, dict):
+        checks_config = phase_config.get("checks")
+        if isinstance(checks_config, dict):
+            timeout_value = checks_config.get("timeout_seconds")
+            if isinstance(timeout_value, int | float) and not isinstance(timeout_value, bool):
+                state.check_timeout_seconds = f"{timeout_value:g}"
+    state.initial_review_file = ""
+    state.initial_review_mode = ""
+    state.pending_review = "profile"
+    started_at = summary.get("finished_at") or summary.get("started_at")
+    timestamp = f" from {started_at}" if isinstance(started_at, str) and started_at else ""
+    state.origin_label = f"last run{timestamp}"
+    state.origin_command = shlex.join(("revrem", *_argv_for_state(state)))
+    return state
+
+
 def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
     parsed = cli_args.parse_args((*argv, "--dry-run"))
     profile_name = parsed.profile
@@ -1027,7 +1327,7 @@ def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
         )
     else:
         profile = profiles.resolve_defaults(cwd=cwd, require_implemented=False)
-    state = _initial_state(WizardProfileChoice(profile_name=profile_name, profile=profile))
+    state = _initial_state(WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd)
     _apply_parsed_args(state, parsed)
     return state
 
@@ -1035,7 +1335,9 @@ def _state_from_argv(argv: tuple[str, ...], cwd: Path) -> WizardState:
 def _state_is_previewable(state: WizardState, cwd: Path) -> bool:
     try:
         preview = _run_preview(state, cwd)
-    except (OSError, RuntimeError, ValueError):
+    except (OSError, RuntimeError, SystemExit, ValueError):
+        # Structured resume data can outlive parser choices.  Previewing must
+        # fail closed for that stale run rather than terminating the wizard.
         return False
     return not preview.has_unresolved_models
 
@@ -1045,6 +1347,10 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
         state.base = parsed.base
     if parsed.max_iterations is not None:
         state.max_iterations = parsed.max_iterations
+    if parsed.final_review_remediation_passes is not None:
+        state.final_review_remediation_passes = parsed.final_review_remediation_passes
+    if parsed.inner_check_retries is not None:
+        state.inner_check_retries = parsed.inner_check_retries
     if parsed.check:
         state.checks = tuple(parsed.check)
     if parsed.final_review is not None:
@@ -1093,6 +1399,10 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
         state.check_timeout_seconds = f"{parsed.check_timeout_seconds:g}"
     if parsed.commit_after_remediation is not None:
         state.commit_after_remediation = parsed.commit_after_remediation
+    if parsed.full_auto is not None:
+        state.full_auto = parsed.full_auto
+    if parsed.exec_sandbox is not None:
+        state.exec_sandbox = parsed.exec_sandbox
     if parsed.progress_style is not None:
         state.progress_style = parsed.progress_style
     if parsed.summary_format is not None:
@@ -1101,6 +1411,10 @@ def _apply_parsed_args(state: WizardState, parsed) -> None:
         state.max_wall_seconds = f"{parsed.max_wall_seconds:g}"
     if parsed.pending_review is not None:
         state.pending_review = parsed.pending_review
+    if parsed.initial_review_file is not None:
+        state.initial_review_file = parsed.initial_review_file
+    if parsed.initial_review_mode is not None:
+        state.initial_review_mode = parsed.initial_review_mode
 
 
 def _apply_str_attr(state: WizardState, name: str, value: str | None) -> None:
@@ -1108,23 +1422,30 @@ def _apply_str_attr(state: WizardState, name: str, value: str | None) -> None:
         setattr(state, name, value)
 
 
+def _is_codex_triage_harness(harness: str, *, cwd: Path | None = None) -> bool:
+    return harnesses._resolve_catalog_driver(harness, cwd=cwd) == "codex"
+
+
 def _repair_stale_codex_triage_reasoning_effort(
     *,
     harness: str,
     reasoning_effort: str,
+    cwd: Path | None = None,
 ) -> tuple[str, str]:
     # Disabled profiles can still carry stale Codex triage state from older saves.
-    if harness == "codex" and reasoning_effort == "minimal":
+    if _is_codex_triage_harness(harness, cwd=cwd) and reasoning_effort == "minimal":
         return "low", "minimal"
     return reasoning_effort, ""
 
 
-def _selected_effort_value(state: WizardState, label: str, effort: str) -> str:
+def _selected_effort_value(
+    state: WizardState, label: str, effort: str, *, cwd: Path | None = None
+) -> str:
     if effort != "profile":
         return effort
     if (
         label == "triage"
-        and state.triage_harness == "codex"
+        and _is_codex_triage_harness(state.triage_harness, cwd=cwd)
         and state.stale_triage_reasoning_effort
         and state.triage_reasoning_effort
     ):
@@ -1138,7 +1459,9 @@ def _configured_effort(state: WizardState, label: str) -> str:
     if label == "triage":
         return state.triage_reasoning_effort or state.profile.triage.reasoning_effort or ""
     if label == "remediation":
-        return state.remediation_reasoning_effort or state.profile.remediation.reasoning_effort or ""
+        return (
+            state.remediation_reasoning_effort or state.profile.remediation.reasoning_effort or ""
+        )
     if label == "commit message":
         return state.commit_reasoning_effort or state.profile.commit.reasoning_effort or ""
     return ""
@@ -1169,16 +1492,27 @@ def _argv_for_state(state: WizardState) -> list[str]:
     argv: list[str] = []
     if state.profile_name:
         argv.extend(["--profile", state.profile_name])
+    if state.profile_snapshot_path is not None:
+        argv.extend(["--profile-snapshot", str(state.profile_snapshot_path)])
     if state.base != profile.pipeline.base:
         argv.extend(["--base", state.base])
     if state.max_iterations != profile.pipeline.max_iterations:
         argv.extend(["--max-iterations", str(state.max_iterations)])
+    if state.inner_check_retries != profile.runtime.inner_check_retries:
+        argv.extend(["--inner-check-retries", str(state.inner_check_retries)])
     if state.checks != profile.pipeline.checks:
         checks = state.checks or ("true",)
         for command in checks:
             argv.extend(["--check", command])
     if state.final_review != profile.pipeline.final_review:
         argv.append("--final-review" if state.final_review else "--skip-final-review")
+    if state.final_review_remediation_passes != profile.pipeline.final_review_remediation_passes:
+        argv.extend(
+            [
+                "--final-review-remediation-passes",
+                str(state.final_review_remediation_passes),
+            ]
+        )
     if state.triage_enabled != profile.triage.enabled:
         argv.append("--triage" if state.triage_enabled else "--no-triage")
     if state.triage_enabled:
@@ -1259,12 +1593,20 @@ def _argv_for_state(state: WizardState) -> list[str]:
             if state.commit_after_remediation
             else "--no-commit-after-remediation"
         )
+    if state.full_auto != profile.runtime.full_auto:
+        argv.append("--full-auto" if state.full_auto else "--no-full-auto")
+    if state.exec_sandbox != profile.runtime.exec_sandbox:
+        argv.extend(["--exec-sandbox", state.exec_sandbox])
     if state.progress_style != profile.output.progress_style:
         argv.extend(["--progress-style", state.progress_style])
     if state.summary_format != profile.output.summary_format:
         argv.extend(["--summary-format", state.summary_format])
     if state.max_wall_seconds:
         argv.extend(["--max-wall-seconds", state.max_wall_seconds])
+    if state.initial_review_file:
+        argv.extend(["--initial-review-file", state.initial_review_file])
+        if state.initial_review_mode:
+            argv.extend(["--initial-review-mode", state.initial_review_mode])
     if state.pending_review != "profile":
         argv.extend(["--pending-review", state.pending_review])
     return argv
@@ -1274,6 +1616,21 @@ def _config_for_state(state: WizardState, cwd: Path):
     parsed = cli_args.parse_args((*_argv_for_state(state), "--dry-run"))
     config, _source = build_loop_config(parsed, cwd, require_implemented=False)
     return config
+
+
+def _pending_review_candidate_for_config(
+    config: LoopConfig, *, compatible: bool
+) -> PendingReviewCandidate | None:
+    search_root = (
+        config.artifact_dir.parent if config.artifact_dir_is_default else config.artifact_dir
+    )
+    if not search_root.is_absolute():
+        search_root = config.cwd / search_root
+    current_git_state = current_git_state_for_latest(config.cwd, config.base)
+    return find_pending_review_candidate(
+        search_root,
+        current_git_state=current_git_state if compatible else None,
+    )
 
 
 def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
@@ -1435,11 +1792,14 @@ def _run_preview(state: WizardState, cwd: Path) -> RunPreview:
         checks=tuple(config.check_commands),
         check_timeout=config.check_timeout_seconds_display,
         final_review=config.final_review,
+        final_review_remediation_passes=config.final_review_remediation_passes,
         commit_message=commit_message,
         summary_format=state.summary_format,
         progress_style=config.progress_style,
         budget_max_wall_seconds=config.budget_config.max_wall_seconds,
         pending_review=state.pending_review,
+        initial_review_file=state.initial_review_file or None,
+        initial_review_mode=state.initial_review_mode or None,
     )
 
 
@@ -1452,6 +1812,9 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
     ]
     if preview.budget_max_wall_seconds is not None:
         lines.append(f"budget: max wall {_wall_budget_text(preview.budget_max_wall_seconds)}")
+    if preview.initial_review_file:
+        mode = preview.initial_review_mode or "explicit"
+        lines.append(f"initial review: {mode} · {preview.initial_review_file}")
     if preview.pending_review != "profile":
         lines.append(f"pending review: {preview.pending_review}")
     lines.extend(
@@ -1512,6 +1875,12 @@ def _run_preview_lines(preview: RunPreview) -> tuple[str, ...]:
     lines.append("")
     if preview.final_review:
         lines.append("+-- after pass limit: final review enabled")
+        if preview.final_review_remediation_passes:
+            suffix = "pass" if preview.final_review_remediation_passes == 1 else "passes"
+            lines.append(
+                "+-- if final review finds issues: remediate + verify + review "
+                f"up to {preview.final_review_remediation_passes} additional {suffix}"
+            )
     else:
         lines.append("+-- after pass limit: final review off")
     if preview.has_unresolved_models:
@@ -1561,7 +1930,11 @@ def _phase_preview(
         timeout=timeout,
         effort_source=effort_source,
         source=default_source,
-        unresolved_model=(model is None and harness != "codex") or blocked_reason is not None,
+        unresolved_model=(
+            model is None and harnesses._resolve_catalog_driver(harness, cwd=cwd) != "codex"
+        )
+        or blocked_reason is not None,
+        allows_provider_default=(harnesses._resolve_catalog_driver(harness, cwd=cwd) == "codex"),
         blocked_reason=blocked_reason,
     )
 
@@ -1592,7 +1965,7 @@ def _route_preview_timeout(
 def _phase_summary_for_preview(phase: PhasePreview) -> str:
     if phase.model:
         model = phase.model
-    elif phase.harness == "codex" and not phase.unresolved_model:
+    elif phase.allows_provider_default and not phase.unresolved_model:
         model = "provider default"
     else:
         model = "model unresolved"
@@ -1706,7 +2079,7 @@ class ProviderDefault:
 
 
 def _provider_default(harness: str, cwd: Path) -> ProviderDefault:
-    if harness != "codex":
+    if harnesses._resolve_catalog_driver(harness, cwd=cwd) != "codex":
         return ProviderDefault()
     config_path = Path(environ.get("CODEX_HOME", Path.home() / ".codex")) / "config.toml"
     try:
@@ -1864,61 +2237,6 @@ def _route_label(route: profiles.TriageRouteConfig) -> str:
     return ", ".join(parts)
 
 
-def _detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
-    root = repo_root_or_cwd(cwd)
-    presets: list[CheckPreset] = []
-    if (root / "scripts" / "dev-check").is_file():
-        presets.append(
-            CheckPreset("repo-gate", "repo gate: ./scripts/dev-check", ("./scripts/dev-check",))
-        )
-
-    pyproject = root / "pyproject.toml"
-    tests_dir = root / "tests"
-    if pyproject.is_file() or tests_dir.is_dir():
-        presets.append(CheckPreset("python-fast", "Python fast: pytest -q", ("pytest -q",)))
-
-    static_checks: list[str] = []
-    if pyproject.is_file():
-        text = _read_text_best_effort(pyproject)
-        if "[tool.ruff" in text or "ruff" in text:
-            static_checks.append("ruff check .")
-        if "[tool.mypy" in text or "mypy" in text:
-            static_checks.append("mypy src")
-    if static_checks:
-        presets.append(
-            CheckPreset(
-                "python-static",
-                "Python static: " + " && ".join(static_checks),
-                tuple(static_checks),
-            )
-        )
-
-    if _meminit_detected(root):
-        presets.append(
-            CheckPreset(
-                "meminit",
-                "Meminit DocOps: uv run --locked meminit check --format json",
-                ("uv run --locked meminit check --format json",),
-            )
-        )
-    presets.append(
-        CheckPreset("diff-check", "Git whitespace: git diff --check", ("git diff --check",))
-    )
-    return tuple(presets)
-
-
-def _read_text_best_effort(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return ""
-
-
-def _meminit_detected(cwd: Path) -> bool:
-    agents = cwd / "AGENTS.md"
-    return agents.is_file() and "MEMINIT_PROTOCOL" in _read_text_best_effort(agents)
-
-
 def _positive_int(value: str) -> str | None:
     try:
         parsed = int(value)
@@ -1926,6 +2244,16 @@ def _positive_int(value: str) -> str | None:
         return "Enter a whole number."
     if parsed < 1:
         return "Enter a number greater than zero."
+    return None
+
+
+def _non_negative_int(value: str) -> str | None:
+    try:
+        parsed = int(value)
+    except ValueError:
+        return "Enter a whole number."
+    if parsed < 0:
+        return "Enter 0 or a positive whole number."
     return None
 
 

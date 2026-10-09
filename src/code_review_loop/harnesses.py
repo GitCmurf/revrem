@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -44,6 +45,7 @@ class PhaseCommandRequest:
     harness: str
     role: str
     executable: str
+    cwd: Path | None = None
     base: str = "main"
     model: str | None = None
     reasoning_effort: str | None = None
@@ -85,9 +87,10 @@ def resolve_commit_message_reasoning_effort(
     harness: str,
     model: str | None,
     requested_effort: str | None,
+    cwd: Path | None = None,
 ) -> ReasoningEffortResolution:
     if (
-        harness == "codex"
+        _resolve_catalog_driver(harness, cwd=cwd) == "codex"
         and requested_effort == "minimal"
         and model in CODEX_MINIMAL_UNSUPPORTED_COMMIT_MODELS
     ):
@@ -96,20 +99,24 @@ def resolve_commit_message_reasoning_effort(
             requested=requested_effort,
             adjustment=CODEX_MINIMAL_UNSUPPORTED_ADJUSTMENT,
         )
-    return ReasoningEffortResolution(effective=requested_effort, requested=requested_effort)
+    return ReasoningEffortResolution(
+        effective=requested_effort, requested=requested_effort
+    )
 
 
-def reasoning_effort_supported(harness: str) -> bool:
+def reasoning_effort_supported(harness: str, *, cwd: Path | None = None) -> bool:
     """Return whether RevRem can enforce reasoning effort for this harness.
 
     The resolved phase config may carry a reasoning-effort value for every
     harness, but only adapters that map it into their provider argv should show
     it as an effective operator control.
     """
-    return harness in REASONING_EFFORT_HARNESSES
+    return _resolve_catalog_driver(harness, cwd=cwd) in REASONING_EFFORT_HARNESSES
 
 
-def phase_effort_text(harness: str | None, effort: str | None) -> str | None:
+def phase_effort_text(
+    harness: str | None, effort: str | None, *, cwd: Path | None = None
+) -> str | None:
     """Return the operator-facing effort text for a phase.
 
     Mirrors the prior ``_phase_effort_text`` helpers in ``runtime.py`` and
@@ -119,7 +126,7 @@ def phase_effort_text(harness: str | None, effort: str | None) -> str | None:
     """
     if not effort:
         return None
-    if harness and not reasoning_effort_supported(harness):
+    if harness and not reasoning_effort_supported(harness, cwd=cwd):
         return "n/a"
     return effort
 
@@ -147,16 +154,27 @@ class CodexHarnessAdapter(HarnessAdapter):
         command.extend(_codex_config_args(request.reasoning_effort))
         if request.role == "commit-message":
             command.extend(["-c", 'web_search="disabled"'])
-        if request.role == "remediation" and request.full_auto:
-            command.append("--full-auto")
-        command.extend(["--sandbox", request.sandbox])
+        automatic_approval = (
+            request.role == "remediation"
+            and request.full_auto
+            and request.sandbox == "workspace-write"
+        )
+        if automatic_approval:
+            command.append("--approve-for-me")
+        else:
+            command.extend(["--sandbox", request.sandbox])
         command.extend(["--color", request.color])
         if request.json_output:
             command.append("--json")
         if request.model:
             command.extend(["--model", request.model])
-        if request.role == "remediation" and request.output_last_message_path is not None:
-            command.extend(["--output-last-message", str(request.output_last_message_path)])
+        if (
+            request.role == "remediation"
+            and request.output_last_message_path is not None
+        ):
+            command.extend(
+                ["--output-last-message", str(request.output_last_message_path)]
+            )
         command.append("-")
         return command
 
@@ -424,7 +442,9 @@ def _kilo_permission_args(request: PhaseCommandRequest) -> list[str]:
 
 
 PRODUCTION_HARNESS_REGISTRY = MappingProxyType(HARNESS_REGISTRY)
-TEST_HARNESS_REGISTRY = MappingProxyType({**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC})
+TEST_HARNESS_REGISTRY = MappingProxyType(
+    {**HARNESS_REGISTRY, "fake": FAKE_HARNESS_SPEC}
+)
 
 
 def harness_registry() -> Mapping[str, HarnessSpec]:
@@ -433,25 +453,39 @@ def harness_registry() -> Mapping[str, HarnessSpec]:
     return PRODUCTION_HARNESS_REGISTRY
 
 
-def validate_harness_name(name: str, *, field: str = "harness") -> None:
+def validate_harness_name(
+    name: str, *, field: str = "harness", cwd: Path | None = None
+) -> None:
     registry = harness_registry()
-    if name not in registry:
-        known = ", ".join(sorted(registry.keys()))
+    from code_review_loop.model_catalog import load_catalog
+
+    catalog_names = load_catalog(cwd).harnesses
+    if name not in registry and name not in catalog_names:
+        known = ", ".join(sorted(set(registry) | set(catalog_names)))
         raise ValueError(f"{field} must be one of: {known}")
 
 
-def require_implemented_harness(name: str, *, field: str = "harness") -> None:
+def require_implemented_harness(
+    name: str, *, field: str = "harness", cwd: Path | None = None
+) -> None:
     spec = harness_registry().get(name)
     if spec and not spec.implemented:
         raise ValueError(
             f"{field}={name!r} is valid profile syntax, but command execution is not implemented"
         )
+    if spec is None:
+        from code_review_loop.model_catalog import load_catalog
+
+        if name not in load_catalog(cwd).harnesses:
+            validate_harness_name(name, field=field, cwd=cwd)
 
 
 def resolve_executable(
     harness: str,
     harness_executables: dict[str, str],
     codex_bin: str,
+    *,
+    cwd: Path | None = None,
 ) -> str:
     if harness in harness_executables:
         return harness_executables[harness]
@@ -460,11 +494,22 @@ def resolve_executable(
     registry = harness_registry()
     if harness in registry:
         return registry[harness].executable
+    from code_review_loop.model_catalog import load_catalog
+
+    catalog_spec = load_catalog(cwd).harnesses.get(harness)
+    if catalog_spec is not None:
+        return catalog_spec.executable
     return harness
 
 
 def build_phase_command(request: PhaseCommandRequest) -> list[str]:
     adapter = HARNESS_ADAPTERS.get(request.harness)
+    if adapter is None:
+        from code_review_loop.model_catalog import load_catalog
+
+        catalog_spec = load_catalog(request.cwd).harnesses.get(request.harness)
+        if catalog_spec is not None:
+            adapter = HARNESS_ADAPTERS.get(catalog_spec.driver)
     if adapter is None:
         raise ValueError(f"unknown harness: {request.harness}")
     return adapter.command(request)
@@ -476,12 +521,14 @@ def prepare_prompt_invocation(
     prompt: str | None,
     *,
     prompt_artifact_path: Path | None = None,
+    cwd: Path | None = None,
 ) -> PromptInvocation:
     """Adapt prompt delivery to each harness' non-interactive CLI contract."""
+    protocol_harness = _resolve_catalog_driver(harness, cwd=cwd)
     if prompt is None:
         return PromptInvocation(list(command), None, "none")
     encoded = prompt.encode("utf-8")
-    if harness == "opencode":
+    if protocol_harness == "opencode":
         if prompt_artifact_path is None:
             raise ValueError("opencode prompt delivery requires a prompt artifact path")
         adapted = list(command)
@@ -495,7 +542,7 @@ def prepare_prompt_invocation(
             prompt_bytes=len(encoded),
             prompt_artifact=prompt_artifact_path,
         )
-    if harness == "gemini":
+    if protocol_harness == "gemini":
         if len(encoded) > GEMINI_ARGV_PROMPT_MAX_BYTES:
             raise ValueError(
                 "gemini prompt exceeds RevRem's current --prompt delivery cap "
@@ -518,6 +565,20 @@ def prepare_prompt_invocation(
         prompt_chars=len(prompt),
         prompt_bytes=len(encoded),
     )
+
+
+def _resolve_catalog_driver(name: str, *, cwd: Path | None = None) -> str:
+    from code_review_loop.model_catalog import load_catalog
+
+    catalog_spec = load_catalog(cwd).harnesses.get(name)
+    if catalog_spec is not None:
+        return catalog_spec.driver
+    return name
+
+
+def resolved_harness_spec(name: str, *, cwd: Path | None = None) -> HarnessSpec | None:
+    """Return capabilities for a direct harness or a catalog alias's driver."""
+    return harness_registry().get(_resolve_catalog_driver(name, cwd=cwd))
 
 
 def harness_capabilities_payload(name: str) -> dict[str, Any]:
@@ -582,6 +643,9 @@ def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, st
         return -1, "", "Fake harness timeout\n"
     if scenario == "cancellation":
         raise KeyboardInterrupt()
+    if scenario == "slow_cancel":
+        time.sleep(60)
+        return 0, "No actionable findings.\nREVIEW_STATUS: clear\n", ""
     if scenario == "unsupported":
         return (
             2,
@@ -590,7 +654,9 @@ def run_fake_harness_command(args: list[str] | tuple[str, ...]) -> tuple[int, st
         )
 
     fixture_dir = os.environ.get(FAKE_HARNESS_FIXTURE_ENV)
-    base = Path(fixture_dir) / scenario if fixture_dir else HARNESS_FIXTURES_DIR / scenario
+    base = (
+        Path(fixture_dir) / scenario if fixture_dir else HARNESS_FIXTURES_DIR / scenario
+    )
 
     # Use specialized filenames for each role
     if phase == "review":

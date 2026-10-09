@@ -602,6 +602,10 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
         for args, input_text, _ in calls
         if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only"
     )
+    assert "Return JSON only" in triage_prompt
+    assert "confirmed_findings" in triage_prompt
+    assert "classification" in triage_prompt
+    assert "route_proposal" in triage_prompt
     assert "Configured remediation routes for route_proposal.route_tier" in triage_prompt
     assert "- codex-midi: harness=codex, model=gpt-test" in triage_prompt
     assert "timeout=none" in triage_prompt
@@ -616,6 +620,217 @@ def test_loop_recovers_misplaced_definition_of_done_and_routes(tmp_path):
         for item in summary["triage_diagnostics"]
     )
     assert not (tmp_path / "artifacts" / "diagnostics-1.json").exists()
+
+
+def test_v2_triage_profile_prompt_is_additive_to_contract_prompt(tmp_path):
+    calls = []
+
+    triage_payload = {
+        "confirmed_findings": [],
+        "rejected_findings": [
+            {
+                "fingerprint": "review-comment:1",
+                "summary": "Docs-only guidance is not actionable here.",
+                "severity": "low",
+                "affected_paths": ["README.md"],
+                "rationale": "The review item does not describe a correctness issue.",
+                "rejection_reason": "not actionable",
+            }
+        ],
+        "needs_more_info": [],
+        "implementation_order": [],
+        "verification_commands": [],
+        "classification": {
+            "risk_level": "low",
+            "refactor_depth": "localised",
+            "domain_tags": ["documentation"],
+            "affected_modules": ["README.md"],
+            "estimated_blast_radius": {"finding_count": 0, "module_count": 0},
+            "safety_signals": [],
+            "failed_check_signals": [],
+        },
+        "route_proposal": {
+            "route_tier": "codex-midi",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "medium",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 0,
+            "rationale": "No confirmed remediation is needed.",
+        },
+        "prompt_requirements": {
+            "required_fragments": [],
+            "definition_of_done": [],
+            "triage_prompt_draft": "No remediation required.",
+        },
+        "parsing_warnings": [],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P3] Update the README wording\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        raise AssertionError(f"remediation should not run after rejected-only triage: {args!r}")
+
+    profile_guidance = (
+        "Prioritize documentation drift caused by the change: incorrect README examples."
+    )
+    profile = profiles.Profile(
+        name="docs",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            enabled=True,
+            prompt=profile_guidance,
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="codex-midi"),
+            routes={
+                "codex-midi": profiles.TriageRouteConfig(
+                    harness="codex",
+                    model="gpt-test",
+                    reasoning_effort="medium",
+                    sandbox="workspace-write",
+                )
+            },
+        ),
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_contract="v2",
+        triage_prompt=profile_guidance,
+        profile_v2=profile,
+        final_review=False,
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    triage_prompt = next(
+        input_text
+        for args, input_text, _ in calls
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only"
+    )
+    assert "Return JSON only" in triage_prompt
+    assert "confirmed_findings" in triage_prompt
+    assert "classification" in triage_prompt
+    assert "route_proposal" in triage_prompt
+    assert "Additional profile triage guidance:" in triage_prompt
+    assert profile_guidance in triage_prompt
+    assert "Configured remediation routes for route_proposal.route_tier" in triage_prompt
+    assert "- codex-midi: harness=codex, model=gpt-test" in triage_prompt
+
+    prompt_artifact = (tmp_path / "artifacts" / "triage-1-prompt.txt").read_text(
+        encoding="utf-8"
+    )
+    assert prompt_artifact == triage_prompt
+
+
+def test_routed_remediation_with_omitted_route_timeout_inherits_remediation_timeout(tmp_path):
+    calls = []
+
+    triage_payload = {
+        "confirmed_findings": [
+            {
+                "fingerprint": "review-comment:1",
+                "summary": "Fix profile route fallback persistence.",
+                "severity": "medium",
+                "affected_paths": ["src/code_review_loop/profiles.py"],
+                "rationale": "The profile save path can omit inherited fallback route rows.",
+            }
+        ],
+        "rejected_findings": [],
+        "needs_more_info": [],
+        "implementation_order": ["review-comment:1"],
+        "verification_commands": ["pytest -q tests/test_profile_edit_primitives.py"],
+        "classification": {
+            "risk_level": "medium",
+            "refactor_depth": "localised",
+            "domain_tags": ["configuration", "routing"],
+            "affected_modules": ["code_review_loop.profiles"],
+            "estimated_blast_radius": {"finding_count": 1, "module_count": 1},
+            "safety_signals": [],
+            "failed_check_signals": [],
+        },
+        "route_proposal": {
+            "route_tier": "codex-midi",
+            "harness": "codex",
+            "model": "gpt-test",
+            "reasoning_effort": "medium",
+            "sandbox": "workspace-write",
+            "timeout_seconds": 0,
+            "rationale": "Localised medium-risk routing fix.",
+        },
+        "prompt_requirements": {
+            "required_fragments": [],
+            "definition_of_done": ["Profile route fallback persistence is covered."],
+            "triage_prompt_draft": "Fix profile fallback route persistence without scratch files.",
+        },
+        "parsing_warnings": [],
+    }
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Materialize inherited fallback routes\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return CommandResult(list(args), 0, stdout=json.dumps(triage_payload))
+        return CommandResult(list(args), 0, stdout="remediated\n")
+
+    profile = profiles.Profile(
+        name="docs",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            enabled=True,
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="codex-midi"),
+            routes={
+                "codex-midi": profiles.TriageRouteConfig(
+                    harness="codex",
+                    model="gpt-test",
+                    reasoning_effort="medium",
+                    sandbox="workspace-write",
+                    timeout_seconds=None,
+                )
+            },
+        ),
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        remediation_timeout_seconds=3600,
+        triage_enabled=True,
+        triage_contract="v2",
+        profile_v2=profile,
+        final_review=False,
+        phase_config_field_sources={"remediation": {"timeout_seconds": "cli"}},
+    )
+
+    runner_mod.run_loop(config, runner)
+
+    remediation_call = next(
+        call
+        for call in calls
+        if "--approve-for-me" in call[0]
+    )
+    assert remediation_call[2] == 3600
+    routing_json = json.loads((tmp_path / "artifacts" / "routing-1.json").read_text())
+    assert routing_json["effective_route"]["timeout_seconds"] == 3600
+    assert routing_json["policy_decision"]["decision"] == "policy_override"
+    assert "timeout_seconds" in routing_json["policy_decision"]["rationale"]
 
 
 def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
@@ -663,6 +878,136 @@ def test_loop_failed_triage_command_writes_diagnostics(tmp_path):
         in summary["artifact_paths"]["diagnostics"]
     )
     assert calls[1][2] == 1
+
+
+def test_v2_unstructured_triage_continues_with_diagnostic_and_skips_routing(tmp_path):
+    calls = []
+    remediation_inputs = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return CommandResult(list(args), 0, stdout="I found the issue. Apply this patch.\n")
+        remediation_inputs.append(input_text or "")
+        return CommandResult(list(args), 0, stdout="remediated\n")
+
+    profile = profiles.Profile(
+        name="routed",
+        triage=profiles.TriageConfig(
+            contract="v2",
+            enabled=True,
+            routing=profiles.TriageRoutingConfig(enabled=True, default_route="codex-midi"),
+            routes={
+                "codex-midi": profiles.TriageRouteConfig(
+                    harness="codex",
+                    model="gpt-test",
+                    reasoning_effort="medium",
+                    sandbox="workspace-write",
+                )
+            },
+        ),
+    )
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_contract="v2",
+        profile_v2=profile,
+        final_review=False,
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    diagnostic = summary["triage_diagnostics"][0]
+    assert diagnostic["code"] == "revrem.triage.unstructured_output"
+    assert diagnostic["severity"] == "warn"
+    assert remediation_inputs
+    assert "Triage handoff from the previous review" in remediation_inputs[0]
+    assert "I found the issue. Apply this patch." in remediation_inputs[0]
+    assert not (tmp_path / "artifacts" / "routing-1.json").exists()
+    assert not (tmp_path / "artifacts" / "routing-outcome-1.json").exists()
+
+
+def test_v2_unstructured_triage_stops_when_invalid_policy_is_stop(tmp_path):
+    remediation_calls = 0
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        nonlocal remediation_calls
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        if "--sandbox" in args and args[args.index("--sandbox") + 1] == "read-only":
+            return CommandResult(list(args), 0, stdout="I found the issue. Apply this patch.\n")
+        remediation_calls += 1
+        return CommandResult(list(args), 0, stdout="remediated\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_contract="v2",
+        triage_on_invalid="stop",
+        final_review=False,
+    )
+
+    with pytest.raises(RunLoopFailed):
+        runner_mod.run_loop(config, runner)
+
+    summary = json.loads((tmp_path / "artifacts" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["stopped_reason"] == "triage_failed"
+    assert summary["triage_diagnostics"][0]["code"] == "revrem.triage.unstructured_output"
+    assert remediation_calls == 0
+
+
+def test_v2_dry_run_triage_does_not_fail_on_invalid_policy_stop(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text, timeout_seconds))
+        if args[1] == "review":
+            return CommandResult(
+                list(args),
+                0,
+                stdout="Full review comments:\n\n- [P2] Fix profile merge\n",
+            )
+        raise AssertionError(f"dry run should not execute provider command: {args!r}")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        triage_enabled=True,
+        triage_contract="v2",
+        triage_on_invalid="stop",
+        dry_run=True,
+        final_review=False,
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] in {"findings", "unknown"}
+    assert summary.get("triage_diagnostics", []) == []
+    assert "DRY_RUN triage skipped" in (tmp_path / "artifacts" / "triage-1.txt").read_text(
+        encoding="utf-8"
+    )
+    assert calls == []
 
 
 def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
@@ -745,7 +1090,8 @@ def test_loop_malformed_suppressions_fail_open_for_structured_triage(tmp_path):
     assert run_count == 1
     assert remediation_inputs and "Structured triage handoff" in remediation_inputs[0]
     assert "Fix profile merge" in remediation_inputs[0]
-    assert len([call for call in calls if "--sandbox" in call[0]]) == 2
+    assert len([call for call in calls if "--sandbox" in call[0]]) == 1
+    assert len([call for call in calls if "--approve-for-me" in call[0]]) == 1
 
 
 def test_loop_writes_failure_summary_when_triage_fails(tmp_path):

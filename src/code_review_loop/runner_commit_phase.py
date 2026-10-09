@@ -32,7 +32,11 @@ def execute_commit_phase(
     iteration = engine_state.iteration
     try:
         commit_outcome = ctx.phase_commit.execute(
-            CommitRequest(iteration=iteration, retrying=engine_state.acc.commit_retry),
+            CommitRequest(
+                iteration=iteration,
+                retrying=engine_state.acc.commit_retry,
+                context_iterations=_uncommitted_context_iterations(iterations, iteration),
+            ),
             ctx,
         )
         iterations[-1]["commit_status"] = commit_outcome.status
@@ -72,3 +76,20 @@ def execute_commit_phase(
         None,
         expected_head,
     )
+
+
+def _uncommitted_context_iterations(
+    iterations: list[dict[str, object]], current_iteration: int
+) -> tuple[int, ...]:
+    context: list[int] = []
+    for item in reversed(iterations):
+        value = item.get("iteration")
+        if not isinstance(value, int):
+            continue
+        context.append(value)
+        if item.get("commit_status") == "committed":
+            context.pop()
+            break
+    if current_iteration not in context:
+        context.insert(0, current_iteration)
+    return tuple(sorted(set(context)))

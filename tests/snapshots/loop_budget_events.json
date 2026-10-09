@@ -19,8 +19,26 @@
     },
     "phase": "review",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
+    "schema_version": "1.1",
     "seq": 1,
+    "ts": "2026-01-02T03:04:05Z"
+  },
+  {
+    "iteration": "1",
+    "kind": "model_invocation",
+    "payload": {
+      "duration_seconds": 0.0,
+      "harness": "codex",
+      "model": null,
+      "outcome": "ok",
+      "reasoning_effort": null,
+      "returncode": 0,
+      "tokens": 100
+    },
+    "phase": "review",
+    "run_id": "deadbeefcafe0000deadbeefcafe0000",
+    "schema_version": "1.1",
+    "seq": 2,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -32,8 +50,8 @@
     },
     "phase": "review",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 2,
+    "schema_version": "1.1",
+    "seq": 3,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -47,8 +65,8 @@
     },
     "phase": "review",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 3,
+    "schema_version": "1.1",
+    "seq": 4,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -60,8 +78,8 @@
     },
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 4,
+    "schema_version": "1.1",
+    "seq": 5,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -74,8 +92,8 @@
     },
     "phase": "artifacts",
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 5,
+    "schema_version": "1.1",
+    "seq": 6,
     "ts": "2026-01-02T03:04:05Z"
   },
   {
@@ -86,8 +104,8 @@
     },
     "phase": null,
     "run_id": "deadbeefcafe0000deadbeefcafe0000",
-    "schema_version": "1.0",
-    "seq": 6,
+    "schema_version": "1.1",
+    "seq": 7,
     "ts": "2026-01-02T03:04:05Z"
   }
 ]

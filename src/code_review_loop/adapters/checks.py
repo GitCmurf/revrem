@@ -466,6 +466,10 @@ def run_checks(
     return results, failed_commands
 
 
+MAX_CHECK_FAILURE_OUTPUT_CHARS = 8_000
+MAX_CHECK_FAILURE_OUTPUT_LINE_CHARS = 500
+
+
 def format_check_failures(check_results: list[CommandResult]) -> str:
     """Render a human-readable summary of failed checks for remediation prompts."""
     failures = [r for r in check_results if r.returncode != 0]
@@ -473,8 +477,55 @@ def format_check_failures(check_results: list[CommandResult]) -> str:
         return ""
     parts = ["Check failures from the previous iteration:"]
     for r in failures:
-        parts.append(f"\n$ {shlex.join(r.args)}\n{phase_support._combined_output(r)}")
+        parts.append(f"\n$ {shlex.join(r.args)}\n{_check_output_for_prompt(r)}")
     return "\n".join(parts)
+
+
+def _check_output_for_prompt(result: CommandResult) -> str:
+    output = phase_support._combined_output(result)
+    if not output:
+        return ""
+
+    lines = output.splitlines()
+    normalized_lines: list[str] = []
+    truncated = False
+    for line in lines:
+        trimmed = _trim_check_line_for_prompt(line)
+        normalized_lines.append(trimmed)
+        truncated = truncated or trimmed != line
+    normalized = "\n".join(normalized_lines)
+    if output.endswith("\n"):
+        normalized += "\n"
+    if truncated:
+        normalized += (
+            "\n[... check output truncated for remediation prompt; "
+            "see the check artifact for full output ...]\n"
+        )
+    if len(normalized) <= MAX_CHECK_FAILURE_OUTPUT_CHARS:
+        return normalized
+
+    marker = (
+        "\n\n[... check output truncated for remediation prompt; "
+        "see the check artifact for full output ...]\n\n"
+    )
+    keep_total = MAX_CHECK_FAILURE_OUTPUT_CHARS - len(marker)
+    if keep_total <= 0:
+        return marker[:MAX_CHECK_FAILURE_OUTPUT_CHARS]
+    keep_head = keep_total // 2
+    keep_tail = keep_total - keep_head
+    return normalized[:keep_head] + marker + normalized[-keep_tail:]
+
+
+def _trim_check_line_for_prompt(line: str) -> str:
+    if len(line) <= MAX_CHECK_FAILURE_OUTPUT_LINE_CHARS:
+        return line
+    marker = " [... line truncated for remediation prompt ...] "
+    keep_total = MAX_CHECK_FAILURE_OUTPUT_LINE_CHARS - len(marker)
+    if keep_total <= 0:
+        return marker[:MAX_CHECK_FAILURE_OUTPUT_LINE_CHARS]
+    keep_head = keep_total // 2
+    keep_tail = keep_total - keep_head
+    return line[:keep_head] + marker + line[-keep_tail:]
 
 
 class ChecksAdapter:

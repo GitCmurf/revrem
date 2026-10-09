@@ -17,6 +17,21 @@ from code_review_loop.runtime import RunLoopFailed
 cli_main = import_module("code_review_loop.cli.main")
 
 
+def test_loop_rejects_negative_final_review_remediation_budget(tmp_path):
+    config = LoopConfig(
+        max_iterations=1,
+        final_review_remediation_passes=-1,
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="--final-review-remediation-passes must be 0 or greater",
+    ):
+        runner_mod.run_loop(config, lambda *args, **kwargs: None)
+
+
 def test_loop_caps_remediation_passes_and_runs_final_review(tmp_path):
     calls = []
 
@@ -79,6 +94,71 @@ def test_loop_finishes_clear_when_final_review_goes_green(tmp_path):
     assert summary["final_status"] == "clear"
     assert summary["stopped_reason"] == "review_clear"
     assert [call[0][1] for call in calls] == ["review", "exec", "review"]
+
+
+def test_final_review_findings_receive_one_bounded_remediation_pass(tmp_path):
+    calls = []
+    review_outputs = iter(
+        [
+            "Initial finding.\nREVIEW_STATUS: findings\n",
+            "Final-only finding.\nREVIEW_STATUS: findings\n",
+            "No actionable findings.\nREVIEW_STATUS: clear\n",
+        ]
+    )
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[1] == "review":
+            return CommandResult(list(args), 0, stdout=next(review_outputs))
+        return CommandResult(list(args), 0, stdout="attempted remediation\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        final_review_remediation_passes=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] == "clear"
+    assert [call[0][1] for call in calls] == ["review", "exec", "review", "exec", "review"]
+    assert len(summary["iterations"]) == 2
+    assert (tmp_path / "artifacts" / "review-final.txt").exists()
+    assert (tmp_path / "artifacts" / "review-final-recovery-1.txt").exists()
+    assert summary["artifact_paths"]["reviews"][-2:] == [
+        str(tmp_path / "artifacts" / "review-final.txt"),
+        str(tmp_path / "artifacts" / "review-final-recovery-1.txt"),
+    ]
+    remediation_inputs = [input_text for args, input_text in calls if args[1] == "exec"]
+    assert "Final-only finding." in (remediation_inputs[-1] or "")
+
+
+def test_final_review_remediation_never_exceeds_its_own_budget(tmp_path):
+    calls = []
+
+    def runner(args, cwd, input_text=None, timeout_seconds=None):
+        calls.append((list(args), input_text))
+        if args[1] == "review":
+            return CommandResult(list(args), 0, stdout="Still failing.\nREVIEW_STATUS: findings\n")
+        return CommandResult(list(args), 0, stdout="attempted remediation\n")
+
+    config = LoopConfig(
+        base="main",
+        max_iterations=1,
+        final_review_remediation_passes=1,
+        codex_bin="codex",
+        cwd=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    summary = runner_mod.run_loop(config, runner).to_dict()
+
+    assert summary["final_status"] == "findings"
+    assert [call[0][1] for call in calls] == ["review", "exec", "review", "exec", "review"]
+    assert len(summary["iterations"]) == 2
 
 
 def test_loop_continues_after_check_failure_and_feeds_output_into_next_pass(tmp_path):

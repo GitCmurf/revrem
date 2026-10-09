@@ -25,9 +25,12 @@ in `severity`; translate them as `P0` -> `critical`, `P1` -> `high`,
 
 Fingerprint guidance:
 `fingerprint` must preserve the stable `f1:` finding ID from the review when
-one is present. Do not invent a new fingerprint. If a comment has no stable
-fingerprint and the match is ambiguous, put it in `needs_more_info` instead of
-guessing.
+one is present. Do not invent a new fingerprint in the `f1:` namespace.
+If no `f1:` ID is present but the supplied comment is uniquely
+identifiable by path/line/order, use `review-comment:<1-based-order>` and explain
+this fallback in `parsing_warnings`. Never use null for `fingerprint`.
+If the match is ambiguous, put it in `needs_more_info` with a string fingerprint
+identifying the comment and explain the ambiguity; do not confirm it by guessing.
 
 Contract guidance:
 `affected_paths` should list the minimum files needed to implement the finding.

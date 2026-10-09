@@ -116,6 +116,20 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
     )
     assert (
         detect_review_status(
+            "No actionable correctness issues were found. Unit, lint, formatting, "
+            "and Playwright checks passed; a fresh build was blocked only by the "
+            "read-only review sandbox."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "No actionable correctness issues were found, but a security risk remains."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
             "No actionable correctness, security, or maintainability issues were "
             "identified in the diff. The full test suite also passed locally."
         )
@@ -145,6 +159,15 @@ def test_detect_review_status_accepts_exact_clear_review_lines() -> None:
             "the changed code. A local full pytest run had one subprocess import "
             "failure in an existing test/tool path, but it does not appear tied "
             "to the diff under review."
+        )
+        == "clear"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any discrete, actionable correctness issues in "
+            "the changed code. I could not run pytest in this read-only sandbox "
+            "because Python could not create a temporary directory, but manual "
+            "review of the diff did not reveal blocking defects."
         )
         == "clear"
     )
@@ -274,6 +297,13 @@ def test_detect_review_status_requires_explicit_status_line() -> None:
         detect_review_status(
             "No discrete, actionable correctness issues were found in setup, but "
             "there is a real regression in runtime routing."
+        )
+        == "unknown"
+    )
+    assert (
+        detect_review_status(
+            "I did not identify any discrete, actionable correctness issues in "
+            "setup, but there is a real routing bug in the runtime path."
         )
         == "unknown"
     )
@@ -434,3 +464,32 @@ def test_strip_finding_priority_extracts_priority_tag() -> None:
 def test_strip_finding_priority_returns_empty_tag_for_no_match() -> None:
     assert strip_finding_priority("No priority tag here") == ("", "No priority tag here")
     assert strip_finding_priority("") == ("", "")
+
+
+EMPTY_DIFF_REVIEW = (
+    "The diff against " + "a" * 40 + " is empty, "
+    "so there are no changes to review. The checks in check.py pass."
+)
+
+
+def test_empty_diff_claim_requires_git_proof_outside_text_classifier():
+    # Sanitised text from the installed-wheel Astra acceptance on 2026-10-06.
+    assert detect_review_status(EMPTY_DIFF_REVIEW) == "unknown"
+    diagnostic = review_status_diagnostics(EMPTY_DIFF_REVIEW)
+    assert diagnostic["status_source"] == "none"
+    assert diagnostic["status"] == "unknown"
+
+
+@pytest.mark.parametrize("suffix,expected", [
+    (" However, the command failed before reading the diff.", "unknown"),
+    (" The frontend silently drops updates.", "unknown"),
+    ("\n- [P1] Fix the addition regression — calculator.py:3", "findings"),
+    ("\nREVIEW_STATUS: findings", "findings"),
+])
+def test_empty_diff_summary_cannot_hide_other_review_text(suffix, expected):
+    assert detect_review_status(EMPTY_DIFF_REVIEW + suffix) == expected
+
+
+def test_empty_diff_heuristic_does_not_apply_to_prompted_harnesses():
+    assert detect_review_status(EMPTY_DIFF_REVIEW, harness="claude") == "unknown"
+    assert review_status_diagnostics(EMPTY_DIFF_REVIEW, harness="claude")["status_source"] == "none"

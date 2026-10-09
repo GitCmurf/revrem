@@ -3,8 +3,8 @@ document_id: REVREM-ADR-012
 type: ADR
 title: Review loop application boundary and engine ownership
 status: Approved
-version: '0.3'
-last_updated: '2026-05-28'
+version: '0.4'
+last_updated: '2026-09-02'
 owner: GitCmurf
 docops_version: '2.0'
 ---
@@ -67,6 +67,18 @@ subprocess, or filesystem orchestration modules. The production runner drives
 the loop through `core.engine.run()` with a runner-local executor; it must not
 call `decide()` directly and must not simulate engine execution with one-step
 capture bridges.
+
+Final-review recovery is an engine-owned transition, not a CLI or TUI loop.
+`pipeline.max_iterations` bounds ordinary review/remediation passes;
+`pipeline.final_review_remediation_passes` independently bounds additional
+triage/remediation/check/commit cycles that may begin only from actionable final-review
+findings. Each such cycle consumes one recovery pass and, unless it terminates
+earlier, returns to a fresh final review. A value of `0` preserves the historical
+audit-only final review. Recovery artifacts retain the original `review-final.txt`
+and add `review-final-recovery-N.txt`, while human views label the associated
+numbered work as `final recovery N` rather than pretending the ordinary limit grew.
+The engine step ceiling includes both declared bounds, so neither adapter nor
+interactive surface can make this path unbounded.
 
 Architecture ratchets should enforce this story:
 

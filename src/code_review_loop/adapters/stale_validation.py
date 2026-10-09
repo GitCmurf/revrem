@@ -32,11 +32,15 @@ def run_stale_validation(
     prompt_artifact = config.artifact_dir / f"{label}-prompt.txt"
     phase_support.write_artifact(prompt_artifact, prompt)
     command = _build_validation_command(config)
+    review_harness = harnesses._resolve_catalog_driver(
+        config.review_harness, cwd=config.cwd
+    )
     invocation = harnesses.prepare_prompt_invocation(
         config.review_harness,
         command,
         prompt,
         prompt_artifact_path=prompt_artifact,
+        cwd=config.cwd,
     )
     metadata = phase_support.prompt_invocation_metadata(invocation)
     phase_support.progress_event(
@@ -54,6 +58,7 @@ def run_stale_validation(
             source=config.phase_config_sources.get("review", "direct-config"),
             prompt_chars=metadata.get("prompt_chars"),
             prompt_delivery=metadata["prompt_delivery"],
+            cwd=config.cwd,
         ),
         ctx=ctx,
         metadata={
@@ -67,7 +72,7 @@ def run_stale_validation(
     from code_review_loop.adapters.review import review_failed_to_run
 
     attempts = (
-        config.provider_retry_attempts if config.review_harness not in {"codex", "fake"} else 1
+        config.provider_retry_attempts if review_harness not in {"codex", "fake"} else 1
     )
     last_result = None
     for attempt in range(1, attempts + 1):
@@ -84,9 +89,9 @@ def run_stale_validation(
             prompt_artifact=invocation.prompt_artifact,
         )
         last_result = result
-        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+        failure = provider_failures.classify_provider_failure(result, harness=review_harness)
         if (
-            not review_failed_to_run(result, config.review_harness)
+            not review_failed_to_run(result, review_harness, cwd=config.cwd)
             or failure is None
             or not failure.transient
         ):
@@ -116,7 +121,7 @@ def run_stale_validation(
     )
     status = cast(StaleValidationStatus, stale_review.validation_status(combined))
     if result.returncode != 0:
-        failure = provider_failures.classify_provider_failure(result, harness=config.review_harness)
+        failure = provider_failures.classify_provider_failure(result, harness=review_harness)
         failure_detail = f": {failure.detail}" if failure else ""
         phase_support.progress_event(
             config,
@@ -160,6 +165,7 @@ def _build_validation_command(config: LoopConfig) -> list[str]:
             harness=config.review_harness,
             role="triage",
             executable=phase_support._resolve_executable(config.review_harness, config),
+            cwd=config.cwd,
             base=config.base,
             model=config.review_model or config.model,
             reasoning_effort=config.review_reasoning_effort or config.reasoning_effort,

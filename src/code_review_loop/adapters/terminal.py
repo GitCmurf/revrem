@@ -195,7 +195,12 @@ def set_phase_terminal_title(config: LoopConfig, phase: str, label: str) -> None
     from code_review_loop.adapters.phase_support import terminal_iteration_label
 
     set_terminal_title(
-        config, f"{prefix} {terminal_iteration_label(label, config.max_iterations)} RevRem"
+        config,
+        (
+            f"{prefix} "
+            f"{terminal_iteration_label(label, config.max_iterations, final_review_remediation_passes=config.final_review_remediation_passes)} "
+            "RevRem"
+        ),
     )
 
 

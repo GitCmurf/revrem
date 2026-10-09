@@ -47,6 +47,12 @@ def test_v1_schema_history_baselines_are_present_and_current():
     _assert_v1_schema_history_baselines_are_present_and_current()
 
 
+def test_event_v1_1_schema_has_a_frozen_history_baseline():
+    schema = SCHEMA_DIR / "events-v1.1.schema.json"
+    history = SCHEMA_DIR / "_history" / schema.name
+    assert history.read_text(encoding="utf-8") == schema.read_text(encoding="utf-8")
+
+
 def test_no_unintentional_breaks():
     _assert_v1_schema_history_baselines_are_present_and_current()
 

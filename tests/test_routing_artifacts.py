@@ -15,7 +15,7 @@ def _route(timeout_seconds: float | None = None) -> policy.ResolvedRoute:
     )
 
 
-def test_routing_payload_inherits_global_timeout_for_omitted_route_timeout(
+def test_routing_payload_inherits_remediation_timeout_for_omitted_route_timeout(
     tmp_path,
 ):
     payload = routing_artifacts.build_routing_payload(
@@ -24,7 +24,12 @@ def test_routing_payload_inherits_global_timeout_for_omitted_route_timeout(
         run_id="run-1",
         iteration=1,
         remediation_input="fix it",
-        config=LoopConfig(cwd=tmp_path, artifact_dir=tmp_path, timeout_seconds=900),
+        config=LoopConfig(
+            cwd=tmp_path,
+            artifact_dir=tmp_path,
+            timeout_seconds=300,
+            remediation_timeout_seconds=900,
+        ),
     )
 
     assert payload["effective_route"]["timeout_seconds"] == 900
@@ -37,7 +42,12 @@ def test_routing_payload_records_zero_for_unbounded_inherited_timeout(tmp_path):
         run_id="run-1",
         iteration=1,
         remediation_input="fix it",
-        config=LoopConfig(cwd=tmp_path, artifact_dir=tmp_path, timeout_seconds=None),
+        config=LoopConfig(
+            cwd=tmp_path,
+            artifact_dir=tmp_path,
+            timeout_seconds=300,
+            remediation_timeout_seconds=0,
+        ),
     )
 
     assert payload["effective_route"]["timeout_seconds"] == 0

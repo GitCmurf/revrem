@@ -93,12 +93,14 @@ The foundation phase introduces these contracts:
   `code_review_loop`.
 - `suppressions-v1.schema.json` for `.revrem/suppressions.toml` and
   user-local suppression entries;
-- `events-v1.schema.json` for replayable event streams;
+- `events-v1.schema.json` for frozen v1.0 replayable event streams, and
+  `events-v1.1.schema.json` for current streams that may contain
+  `model_invocation` telemetry;
 - `bug-bundle-v1.schema.json` for redacted issue-support bundles.
 
 `diagnostics-v1.schema.json`, `summary-v1.schema.json`,
 `triage-v1.schema.json`, `suppressions-v1.schema.json`,
-`events-v1.schema.json`, and `bug-bundle-v1.schema.json` are concrete schemas
-validated against generated payloads. The initial v1 schema set is also copied
-under `schemas/_history/` so future changes have an in-repository compatibility
-baseline.
+`events-v1.schema.json`, `events-v1.1.schema.json`, and
+`bug-bundle-v1.schema.json` are concrete schemas validated against generated
+payloads. Each published event schema is copied under `schemas/_history/` as
+an immutable compatibility baseline.

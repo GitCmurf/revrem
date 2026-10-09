@@ -115,6 +115,28 @@ def main(argv: Sequence[str]) -> int:
                 if "resolved_profile" in info:
                     print(f"resolved_profile: {json.dumps(info['resolved_profile'], indent=2)}")
             return CommandOk().exit_code
+        if args.command == "set":
+            path = profiles.set_profile_field(
+                args.name, args.key, args.value, cwd=Path.cwd()
+            )
+            if output_format == "json":
+                print(
+                    json.dumps(
+                        {
+                            "status": "ok",
+                            "command": "set",
+                            "name": args.name,
+                            "key": args.key,
+                            "value": args.value,
+                            "path": str(path),
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+            else:
+                print(f"set {args.key} on {args.name} in {path}")
+            return CommandOk().exit_code
         raise ValueError(f"unhandled config command: {args.command}")
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -146,20 +168,7 @@ def edit_profile_config(name: str, *, cwd: Path, home: Path | None = None) -> Pa
 
 
 def _profile_config_owner_path(name: str, cwd: Path, home: Path | None = None) -> Path:
-    project_path = profiles.project_config_path(cwd)
-    project_file = profiles.load_profile_file(project_path)
-    if name in project_file.profiles:
-        return project_path
-
-    user_path = profiles.user_config_path(home)
-    user_file = profiles.load_profile_file(user_path)
-    if name in user_file.profiles:
-        return user_path
-
-    if profiles.is_builtin_profile(name):
-        raise RuntimeError(profiles.builtin_profile_readonly_message(name))
-
-    raise FileNotFoundError(f"profile not found: {name}")
+    return profiles.profile_owner_path(name, cwd=cwd, home=home)
 
 
 def _editor_command() -> list[str]:

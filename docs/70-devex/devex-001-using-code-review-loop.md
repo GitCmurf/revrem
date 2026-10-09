@@ -3,8 +3,8 @@ document_id: REVREM-DEVEX-001
 type: DEVEX
 title: Using code-review-loop
 status: Draft
-version: '1.75'
-last_updated: '2026-06-23'
+version: '1.83'
+last_updated: '2026-09-01'
 owner: GitCmurf
 docops_version: '2.0'
 area: devex
@@ -18,8 +18,8 @@ keywords:
 > **Document ID:** REVREM-DEVEX-001
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 1.75
-> **Last Updated:** 2026-06-23
+> **Version:** 1.83
+> **Last Updated:** 2026-09-01
 > **Type:** DEVEX
 > **Area:** devex
 > **Description:** Operator guide for the code-review-loop utility
@@ -88,58 +88,87 @@ this repository:
 
 ### Promote a stable local version
 
-Other repositories should use a promoted stable install, not the editable
-development environment in this checkout:
+Commit the candidate changes first, then promote from this checkout:
 
 ```bash
-./scripts/promote-stable
+./scripts/promote-stable --extras tui
+./scripts/promote-stable --status
 ```
 
-The promotion script runs `./scripts/dev-check` unless
-`REVREM_SKIP_CHECKS=1` is set, copies a source snapshot under
-`~/.local/share/revrem/releases/`, creates a stable interpreter at
-`~/.local/share/revrem/stable-venv`, recreating an older or missing stable
-venv before updating:
+This installs `revrem` and its compatibility alias under `~/.local/bin`, usable
+from every repository on your account's PATH. It does not require root or modify
+other users' environments. Omit `--extras tui` for the minimal CLI install.
 
-```text
-~/.local/bin/code-review-loop
-~/.local/bin/revrem
-```
+Promotion requires a clean worktree, runs `./scripts/dev-check`, archives the
+exact commit, builds a wheel, and installs it with all declared dependencies into
+a new virtualenv under `~/.local/share/revrem/releases/`. It checks dependency
+consistency, CLI startup, bundled resources, deterministic loops and HTML reports
+outside the checkout before
+switching the `current` symlink. Both launchers follow that pointer and resolve
+the release before starting, so an already running process retains its release.
+`PYTHONPATH` cannot override the installed application. No editable install or
+shared virtualenv is used. A manifest records the commit, wheel hash, Python,
+installed dependencies and whether the development checks were skipped.
 
-Override paths only when needed:
+For an isolated rehearsal, override both destinations:
 
 ```bash
-REVREM_STABLE_HOME=~/tools/revrem \
-REVREM_BIN_DIR=~/.local/bin \
-./scripts/promote-stable
+REVREM_STABLE_HOME=/tmp/revrem-rehearsal \
+REVREM_BIN_DIR=/tmp/revrem-rehearsal-bin \
+./scripts/promote-stable --extras tui
 ```
 
-This creates a deliberate boundary: active edits are tested through
-`./.venv/bin/...`; other repos consume only the last promoted version on
-`PATH`.
+`REVREM_SKIP_CHECKS=1` skips only development checks for a commit already
+verified; installed-package checks always run. `REVREM_STABLE_VENV` is obsolete
+and rejected because releases now own independent environments. Pip honours its
+normal index and wheel-cache settings; network access may be needed to build
+and install. Promotions and rollbacks use an exclusive lock.
 
-### Release and promote the next version
-
-Use this sequence when the current development snapshot is ready to become the
-stable local version:
+Rollback to the previous managed release without fetching dependencies:
 
 ```bash
-# Edit pyproject.toml and src/code_review_loop/__init__.py to the next version.
-./scripts/dev-check
-git diff --check
-git add pyproject.toml src/code_review_loop/__init__.py
-git commit -m "chore: bump version to <version>"
-git tag v<version>
-./scripts/promote-stable
+./scripts/promote-stable --rollback
+./scripts/promote-stable --status
 revrem --version
 ```
 
-`./scripts/promote-stable` reruns `./scripts/dev-check` before it updates
-`~/.local/bin/revrem` and `~/.local/bin/code-review-loop`. It also refreshes
-the stable runtime dependency install on every promotion so an older stable
-virtualenv keeps working after the launcher source tree advances. In sandboxed
-agent sessions, `git tag` may need explicit escalation because Git writes tag
-refs, and annotated tags also write tag objects, under `.git`.
+The previous release is smoke-tested before activation. Rollback swaps current
+and previous, so it can also undo a rollback. Failed builds leave the active
+release unchanged. Keep old release directories while runs use them; automatic
+pruning is intentionally absent. On the first migration from the old installer,
+original launchers are preserved beside each command as
+`*.before-managed-install`; no managed rollback exists until the second
+promotion. Restore those backups manually if abandoning the initial migration.
+The old `stable-venv` and source snapshots are retained. If the original
+launchers belonged to uv or pipx, their environment is also retained. After
+switching, use this promotion workflow for updates: the previous package
+manager's upgrade/uninstall commands can overwrite or remove the same launcher
+paths. Do not alternate package managers for this installation.
+
+### Release and promote the next version
+
+Local promotion and public release are separate actions. Promotion needs no tag,
+push or PyPI publication. For public releases, follow
+[the release runbook](../60-runbooks/runbook-001-release-and-rollback.md).
+
+Before using a promoted command in another repository:
+
+```bash
+revrem doctor --base main --check "your-project-test-command"
+revrem --base main --review-model gpt-6-astra \
+  --remediation-model gpt-6.1-sol --triage --triage-model gpt-6-luna \
+  --reasoning-effort medium --max-iterations 2 --max-wall-seconds 900 \
+  --timeout-seconds 300 --check "your-project-test-command"
+```
+
+Replace the check with the target repository's actual test command. The model
+catalog is metadata, not an account-access check. If Codex reports no changes
+without a recognised clear verdict, RevRem verifies the merge-base comparison
+against HEAD, the index and working tree and checks for non-artifact untracked
+files. Only an empty comparison can clear the run; it writes
+`diagnostics-review-*-empty-comparison.json` and preserves the original review. For current acceptance evidence
+and remaining rollout gates, see
+[deployment readiness](../05-planning/plan-013-system-wide-deployment-readiness.md).
 
 ### Recommended final PR command
 
@@ -218,6 +247,26 @@ providers that omit stable IDs, use a non-alarming notes heading.
 `4` when the summary, event stream, `HEAD`, or base commit do not match. When
 the checks pass, it rebuilds the loop config from `resume_config`, starts from
 the latest review artifact as `review-initial.txt`, and avoids re-running
+
+## Catalog aliases and protocol behavior
+
+If you define a catalog harness alias, for example:
+
+```toml
+[[harness]]
+name = "team-codex"
+driver = "codex"
+```
+
+RevRem retains the configured alias for command execution, events, and retry diagnostics,
+while resolving its driver before selecting review protocol behavior.
+That means `--review-harness team-codex` follows the native Codex review flow
+(no prompt-file injection), while command and artifact output still report the
+configured harness.
+
+For remediation, JSON output is controlled by the resolved runtime
+`exec_json` setting: `--no-exec-json` disables `--json` even when a catalog
+alias points at `codex`.
 completed review phases. Resume uses the recorded review artifact path from
 `summary.json` as written so default relative artifact directories keep working;
 older summaries that only stored a bare filename still fall back to the run
@@ -378,21 +427,18 @@ revrem \
 
 Use `--initial-review-file latest` with the effective artifact directory. When
 `--artifact-dir` or a profile sets `output.artifact_dir`, `latest` resolves
-under that directory instead of the default workspace-local tree. `latest`
-orders compatible candidates by run/review modification time, then uses the
-newest compatible usable generated review artifact from a non-clear run,
+under that directory instead of the default workspace-local tree. Explicit
+`latest` uses the newest usable generated review artifact from a non-clear run,
 including interrupted runs that have `review-1.txt`, `review-2.txt`, or later
-iteration reviews but no `review-final.txt`. Retry-attempt transcripts such as
-`review-1-attempt-1.txt` are ignored because they contain provider failure
-diagnostics rather than review findings. Imported `review-initial.txt` artifacts
-are also ignored so a restart does not keep reusing stale carried-in feedback.
-When run summaries include git state, `latest` skips artifacts from a different
-current `HEAD` or base. When RevRem can identify the current `HEAD`/base,
-historical summaries that do not record git state are not treated as compatible
-`latest` candidates. If the newest compatible run's
-`summary.json` reports `final_status = "clear"`, or there is no previous
-generated review, RevRem starts with a fresh review instead of reviving older
-feedback.
+iteration reviews but no `review-final.txt`, even if the operator has since
+made a cleanup commit and the saved run `HEAD` no longer matches. Retry-attempt
+transcripts such as `review-1-attempt-1.txt` are ignored because they contain
+provider failure diagnostics rather than review findings. Imported
+`review-initial.txt` artifacts are also ignored so a restart does not keep
+reusing stale carried-in feedback. If no usable unresolved review exists,
+explicit `latest` fails clearly instead of silently starting a fresh review.
+Use `--initial-review-mode compatible` with `latest` only when the review must
+come from a matching `HEAD`/base.
 
 If `--initial-review-file` is omitted, interactive terminal runs also check for
 pending review feedback before making a fresh review provider call. When found,
@@ -400,28 +446,37 @@ RevRem asks whether to use or validate the review, show more detail, start
 fresh, or cancel.
 If the only pending review is from a different `HEAD`/base, the interactive
 prompt offers validation, not ordinary reuse, and labels the mismatch clearly
-so the operator can decide whether that older finding is still relevant.
+so the operator can decide whether that older finding is still relevant. The
+start-fresh choice means "run a new review" and is only part of pending-review
+discovery; it is not shown for an explicit `--initial-review-file`.
 Non-interactive runs do not prompt and start fresh by default. Use
 `--pending-review auto` to reuse the detected compatible review without
 prompting, or `--pending-review ignore` to suppress the startup check. `auto`
 never prompts for incompatible older reviews. An explicit
 `--initial-review-file` path or `latest` always takes precedence over the
 pending-review prompt.
+The interactive wizard performs this pending-review check before its run-shape
+menus. When the operator accepts a compatible or stale review, the generated
+command includes `--initial-review-file` and `--initial-review-mode`; when the
+operator starts fresh, the generated command includes `--pending-review ignore`
+to avoid a second prompt after the wizard exits.
 
 When an operator intentionally uses a pending review from a different
 `HEAD`/base, RevRem treats it as stale-review validation instead of ordinary
 remediation. RevRem first runs a read-only stale-validation provider pass using
 the configured review harness/model. That pass decides whether the finding
-still applies to the current checkout before any write-capable remediation
-provider is invoked. If the finding is already resolved, the validator must make
-no edits and include
+still applies to the current checkout before triage, routing, or any
+write-capable remediation provider is invoked. If the finding is already
+resolved, RevRem skips triage/routing/remediation artifacts for that iteration,
+runs the configured checks, and then exits clear if validation and checks left
+the non-artifact Git status unchanged. The validator must make no edits and include
 `STALE_REVIEW_VALIDATION:` evidence ending with
 `REVREM_STALE_REVIEW_STATUS: resolved` in its response. When checks pass and
 the non-artifact Git status snapshot remains unchanged, RevRem stops as
 `clear (stale_review_already_resolved)`, exits `0`, and surfaces only the
 compact validation output instead of continuing to report the old stale
 finding. If validation returns `REVREM_STALE_REVIEW_STATUS: still_applies`,
-RevRem proceeds to normal remediation. If validation returns `unknown` or the
+RevRem proceeds to normal triage, routing, and remediation. If validation returns `unknown` or the
 read-only validation provider fails, RevRem stops before remediation. RevRem
 parses only the first `STALE_REVIEW_VALIDATION:` block in provider stdout before
 any `[stderr]` transcript, so echoed prompt templates or review context cannot
@@ -449,6 +504,10 @@ the repository clean, RevRem adopts that commit, records the side-effect
 artifact in `summary.json` under `commit_message_side_effects`, and prints a
 warning that the model/harness is unsuitable for commit-message drafting until
 fixed. Partial HEAD/index mutations remain errors.
+When verification failures caused earlier iterations to skip auto-commit,
+the next passing commit-message prompt includes context from all uncommitted
+iterations since the last successful commit, so the generated subject can name
+the whole staged change rather than only the latest check-passing iteration.
 
 ### Profile-based usage
 
@@ -474,6 +533,7 @@ description = "Full PR readiness check"
 [profiles.final-pr.pipeline]
 base = "main"
 max_iterations = 2
+final_review_remediation_passes = 1
 checks = ["pytest -q", "git diff --check"]
 
 [profiles.final-pr.review]
@@ -631,7 +691,9 @@ profile keeps fail-closed prompted-review behavior. When the source profile
 uses v2 triage routing, `--save-profile` preserves the triage contract, routing
 rules, route table, and effective `runtime.harness_executables` map, including
 any one-off `--harness-bin HARNESS=EXECUTABLE` overrides supplied on the same
-command.
+command. The save path also validates the fully resolved profile (including
+inherited route tables from defaults) before writing, so a profile that would
+become invalid after defaults merge is rejected instead of being persisted.
 
 Project profile discovery intentionally ignores system temp roots and their
 ancestors when walking for `.git`. This prevents an ambient `/tmp/.git` marker
@@ -660,7 +722,10 @@ Boolean profile values can be overridden from the CLI. Use `--full-auto`,
 `--output-last-message`, `--final-review`, `--exec-json`,
 `--debug-status-detection`, `--quiet-progress`, or `--terminal-title` to force
 them on for a one-off run; use the matching `--no-*` form, or
-`--skip-final-review`, to force them off.
+`--skip-final-review`, to force them off. `--full-auto` is RevRem's stable,
+provider-neutral setting; for current Codex workspace-write remediation it
+emits `codex exec --approve-for-me` without a separate, conflicting `--sandbox`
+argument.
 
 Timeout fields are numeric. A TOML boolean such as `timeout_seconds = false`
 is rejected during profile loading so that accidental type mistakes cannot
@@ -673,6 +738,13 @@ rejected during profile loading as invalid configuration, matching the CLI's
 `--timeout-seconds` validation.
 `--max-iterations` and profile `pipeline.max_iterations` must be positive
 integers; invalid values fail before the review/remediation loop starts.
+`--final-review-remediation-passes` and profile
+`pipeline.final_review_remediation_passes` must be non-negative integers. The
+default is `0`, which keeps final review audit-only. A positive value permits
+that many additional remediation/check/commit cycles only when a final review
+reports findings; RevRem runs a fresh final review after each completed recovery
+cycle. These passes do not change `max_iterations`, and the combined engine step
+ceiling remains bounded. The project `dogfood` profile enables one recovery pass.
 Generated TOML config output rejects non-finite floats instead of writing
 non-portable `nan` or `inf` tokens.
 When terminal title refresh is enabled, the subprocess wrapper keeps waiting on
@@ -781,6 +853,7 @@ revrem config list
 revrem config show final-pr
 revrem config new final-pr --description "Full PR readiness check"
 revrem config edit final-pr
+revrem config set final-pr runtime.full_auto off
 revrem config clone final-pr final-pr-copy
 revrem config export final-pr
 revrem config import profiles.toml
@@ -802,6 +875,75 @@ the behavior of portable shared-profile files even when the destination
 `profiles.toml` has different user-wide defaults.
 
 `revrem config list` shows each profile's description, source file, and last-used timestamp from run history. Bundled expert profiles appear with `source = builtin`; they are read-only, but `revrem config clone security security-local` creates an editable user copy.
+
+### Set a single profile field
+
+Edit one field without opening `$EDITOR`:
+
+    revrem config set final-pr pipeline.max_iterations 11
+    revrem config set final-pr pipeline.final_review_remediation_passes 1
+    revrem config set final-pr review.model gpt-5.5
+    revrem config set final-pr review.timeout_seconds 0.5
+    revrem config set final-pr triage.contract v2
+    revrem config set final-pr triage.routes.codex-midi.model gpt-5.4-mini
+    revrem config set final-pr triage.routing.default_route codex-midi
+    revrem config set final-pr triage.routing.enabled true
+    revrem config set final-pr budgets.max_wall_seconds 7200
+    revrem config set final-pr runtime.provider_retry_attempts 5
+    revrem config set final-pr output.no_tty true
+    revrem config set final-pr runtime.full_auto off
+    revrem config set final-pr description ""
+    revrem config set final-pr output.no_tty true --format json
+
+Numeric fields (including `...max_iterations`,
+`...final_review_remediation_passes`, `...max_tokens`,
+`...max_wall_seconds`, and `...provider_retry_attempts`) are parsed as numeric
+values. `*.timeout_seconds` can be fractional (for example `0.5`), and `0`
+means unbounded for phase timeouts.
+`config set` writes only the field you specify in that profile and preserves
+inherited values from the effective chain (defaults and named profile overlays)
+unless that field is explicitly set. Nested tables are not materialized just
+because you changed one unrelated key. Changing `triage.routing.default_route`
+only rewrites that leaf and preserves inherited routing siblings
+(`enabled`, `mode`, `rule`, `strict_on_unavailable_route`,
+`allow_model_escalation`) and route tables unless you explicitly set them.
+Top-level `description` follows the same inheritance rule: it is preserved from
+defaults unless explicitly overridden with `config set <profile> description ...`.
+To clear an inherited description, set an explicit empty string:
+
+```bash
+revrem config set final-pr description ""
+```
+If a profile is defined at both user and project scope, project edits preserve
+user-owned values as inherited, and do not copy those into `.revrem.toml`.
+If a user-owned value conflicts with a project default for the same field, `config set`
+rewrites only the selected field and keeps the user-owned explicit value in place.
+For routing keys, explicitly-owned routing metadata is preserved too; editing
+`triage.routing.default_route` or another sibling routing leaf does not rewrite
+`strict_on_unavailable_route`/`allow_model_escalation` if they were explicitly set
+in the owning profile and differ from project defaults.
+`config set` validates using the full effective chain (user defaults + project
+defaults + profile), including inherited route tables. For routing edits this
+means `triage.routing.enabled`, `triage.routing.default_route`, and `triage.routes.<name>.*`
+must resolve to a route present in that inherited route table, otherwise the edit is rejected.
+In inherited-v2 setups, this is how non-interactive routing enablement stays valid without
+pre-materializing full route tables into the owning profile.
+For `triage.routes.<name>.*` specifically, explicit route field edits are validated
+against inherited routing context and the edited route row is materialized into the
+owning profile (including inherited values). If the edited route is not the
+inherited `default_route`, that default route row is materialized too so loading the
+profile directly from its owning file stays valid.
+When the TUI removes a route or per-harness executable that came from defaults,
+the owning profile persists the resulting complete map with an internal
+`replace_inherited_maps` list. Supported entries are `triage.routes` and
+`runtime.harness_executables`. This is normally maintained by RevRem; if profiles
+are edited by hand, retain that list or the next inheritance merge will restore
+the omitted map entries.
+Boolean fields (for example `output.no_tty` and `runtime.full_auto`) are parsed
+from `true/false`, `1/0`, `yes/no`, and `on/off`.
+
+Builtins are read-only — clone first (`revrem config clone <builtin> mine`).
+This is the same write path the TUI's working-copy save uses.
 
 Bundled expert profiles:
 
@@ -840,6 +982,8 @@ Run-history commands:
 
 ```bash
 revrem history list
+revrem models list
+revrem stats models
 revrem history --format json list --limit 20
 ```
 
@@ -946,8 +1090,11 @@ and route capability chains without invoking a model. Executable runs still
 fail before remediation when the selected route names an unimplemented or
 incapable harness without an explicit valid fallback.
 
-The `--format` flag is accepted both before and after the subcommand, so the
-global form `revrem config --format json doctor --profile final-pr` works too.
+The `--format` flag is accepted both before and after the subcommand, so both:
+- `revrem config --format json set final-pr output.no_tty true`
+- `revrem config set final-pr output.no_tty true --format json`
+
+work for automation.
 
 Profiles use `review.harness`, `triage.harness`, `remediation.harness`, and
 `commit.harness` to select headless adapters. Codex, Claude, Gemini, opencode,
@@ -985,7 +1132,13 @@ model: checks must pass first, RevRem skips the commit if there are no staged
 changes, and RevRem runs `git commit` itself. The optional `commit.harness`
 field selects the commit-message drafting adapter. Pass
 `--commit-message-harness` to override that drafting harness for one run. The
-optional `commit.message_model` or `--commit-message-model` controls only the
+remediation prompt explicitly tells the provider not to stage or commit, even
+when repository instructions normally require implementation commits. RevRem
+also snapshots `HEAD` around every remediation call and fails the phase with a
+`diagnostics-remediation-*-failure.json` artifact if `HEAD` changes. This keeps
+provider-created commits from being mistaken for verified RevRem commits; the
+operator must inspect and recover any such unexpected commit explicitly.
+The optional `commit.message_model` or `--commit-message-model` controls only the
 read-only model call that drafts the commit subject. If no explicit
 CLI value is supplied, the profile value is used; the built-in profile default
 is `gpt-5.3-codex-spark`. With the default
@@ -996,6 +1149,9 @@ instead of a subject, RevRem records `commit-N-message-fallback.json` with
 instead of committing the prose. Passing
 `--commit-message-prompt` intentionally disables that default subject policy so
 special-purpose commit formats can be tested without fighting the normalizer.
+When the TUI reconstructs effective settings after a live run, map-entry
+deletions (including route rows and harness-executable overrides) remain
+explicit edits and are preserved if the operator saves the profile.
 If a verified remediation pass produces no staged changes after checks pass,
 RevRem stops the loop immediately with
 `final_status: "clear"` and
@@ -1113,11 +1269,13 @@ routing artifacts are also listed under `summary.artifact_paths.prompts` and
 sensitive transcript-like local data. In `routing-N.json`, `prompt.bytes` is
 the UTF-8 byte size of the written prompt artifact, and
 `effective_route.timeout_seconds` records the timeout RevRem will pass to
-remediation execution after inheritance and CLI caps. An explicit CLI
-positive `--timeout-seconds` or `--remediation-timeout-seconds` is treated as
-an upper bound for routed remediation, so a route saved with
-`timeout_seconds = 0` remains unbounded only when the operator does not supply
-a positive CLI cap. Explicit CLI `--timeout-seconds 0` or
+remediation execution after inheritance and CLI caps. If a route omits
+`timeout_seconds`, it inherits the effective remediation phase timeout,
+including `--remediation-timeout-seconds`. An explicit CLI positive
+`--timeout-seconds` or `--remediation-timeout-seconds` is treated as an upper
+bound for routed remediation, so a route saved with `timeout_seconds = 0`
+remains unbounded only when the operator does not supply a positive CLI cap.
+Explicit CLI `--timeout-seconds 0` or
 `--remediation-timeout-seconds 0` keeps the normal zero-means-unbounded
 semantics and does not cap route timeouts; `0` in the routing artifact means
 unbounded.
@@ -1127,7 +1285,10 @@ names, harnesses, models, reasoning effort, timeout, sandbox, and fallback;
 unbounded route timeouts are rendered as `timeout=none`, and route proposals
 must encode that as integer `timeout_seconds = 0` rather than JSON null. RevRem
 normalizes provider output that makes this specific mistake and records an
-info-level triage note. Codex triage should use `low` or higher reasoning
+info-level triage note. Profile `triage.prompt` text is added as extra
+priority guidance after the selected structured triage contract; it does not
+replace the JSON schema instructions required for v2 routing. Codex triage
+should use `low` or higher reasoning
 effort. RevRem rejects Codex `--triage-reasoning-effort minimal` because
 inherited Codex tools can make the provider request fail before structured
 triage output is produced. The wizard treats stale Codex triage profiles that
@@ -1430,10 +1591,10 @@ jobs:
     if: github.event.pull_request.head.repo.fork == false && contains(github.event.pull_request.labels.*.name, 'run-dogfood')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install dogfood dependencies
@@ -1524,15 +1685,126 @@ comment builder consumes.
 ```
 
 Without the `tui` extra, `revrem ui` exits cleanly with an installation hint.
-The CLI remains the authoritative execution path. The TUI renders Home,
-Profiles, Pipeline, Run Monitor, and Controls views from dependency-free view
-models for profiles, recent runs, harness metadata, phase state, command
-previews, and artifact links. Use `--profile NAME` to select the initial
-profile. Key bindings shell through `revrem config` and the normal run CLI:
-`d` dry-runs the selected profile, `s` shows it, `e` edits it, `n` creates a
-profile, `c` clones the selected profile, `x` exports, `i` imports from the
-path field, `delete` deletes through `revrem config delete --yes`, and `q`
-quits.
+The CLI remains the authoritative execution path. The TUI now opens on the
+Loop workspace: a real Textual `LoopDiagram` with one focusable phase card per
+phase, config-truthful loop rails, and an editable triage route table when
+routing is enabled. Enabled and disabled phases render as `●` and `○`; the
+left gutter uses box-drawing return rails for the outer review loop and the
+inner remediation/check retry loop. Workspaces are `1` loop, `2` run,
+`3` profiles, and `4` prompts. The loop workspace edits a working copy in
+memory. `Left` and `Right` cycle through the workspaces with wraparound; number
+keys jump directly. Header tabs use semantic active styling without brackets,
+while footer brackets consistently denote pressable keys. The Next Run summary
+distinguishes replayed settings from subsequent `Modified` operator edits. That
+summary states the profile, review input, effective launch source, and concise last-run
+origin. An editable Run Settings card immediately below it owns base, maximum
+iterations, and final review. It says `initial review file: none` for a fresh run and shows the path
+when feedback is selected. New summaries replay from structured
+`resume_config`, so redaction in diagnostic command text cannot silently select
+an older run. The loaded profile, loop draft, origin, pending review, preview,
+and launch plan share one session state. Compatible actionable review feedback
+is preselected; press `u` to switch between reuse and a fresh review. Older
+actionable feedback from another Git state remains visible but is not selected
+automatically; `u` selects the read-only stale-validation path and `v` shows
+bounded details. Press `s` to persist the authored raw profile delta through
+`profiles.save_profile_raw`. Press `r` or `d` to execute the validated in-memory
+working copy without saving it. The TUI records that effective configuration as
+a profile-snapshot run artifact; bundled profiles are therefore runnable while
+remaining read-only. Clone a bundled profile only when its changes should persist.
+Last-run provenance uses human calendar labels such as `today`, `yesterday`, or
+the weekday plus a compact time rather than exposing storage timestamps.
+
+Textual mounts before profile, catalog, history, and review discovery. Those
+reads produce one complete bootstrap result, installed atomically before the
+workbench is shown, so inactive workspaces and split profile/origin state cannot
+leak into the first completed frame. The startup pane remains visible until
+those background reads complete;
+`--skip-splash` removes branding but not loading feedback, and a slow-load
+message appears after ten seconds rather than exposing partial state.
+
+Loop keys are contextual: `j`/Down and Up move phase focus, `Enter` expands,
+collapses, or enters triage route-row selection, `space` toggles phases that
+can be disabled, `m` cycles harness, `f` cycles reasoning effort, `M` edits
+model, `t` edits timeout, `b` edits base, `i` edits max iterations, and `F`
+toggles final review.
+`e` edits the focused scalar prompt field (`triage.prompt` or
+`commit.message_prompt`), `g` opens the prompt library to apply a selected asset
+to that scalar prompt field, and `a` adds a route when triage is focused.
+Free-text fields are validated at save time. Route rows edit through the same
+working copy and explicit `s` save; route deletion is not available yet because
+the current profile-save primitive is merge-only.
+
+Checks always includes RevRem's built-in worktree-cleanliness check, even when
+there are no configured commands. Focus Checks and press `p` to choose from
+repository-detected recommendations, deduplicated command sets from recent
+repo-local runs, custom commands, or built-in cleanliness only. `I` edits the
+number of check-failure remediation retries. Press `?` or `h` for the scrollable
+contextual help modal; `Esc`, `?`, or `h` closes it without changing the footer.
+
+There is no runtime "copy SVG" command in the TUI. The project uses Textual's
+SVG export in the test harness for checked-in snapshots; for ad hoc operator
+captures, use the terminal's screenshot/copy support.
+
+The Profiles workspace is now a grouped save/load picker: project/user
+profiles appear under "yours" and bundled expert profiles appear under
+"presets". `Enter` loads the highlighted profile into the Loop workspace.
+Bundled presets are loadable guidance profiles but remain read-only on save;
+clone them before editing. The profile lifecycle keys still shell through
+`revrem config`: `d` dry-runs, `r` confirms/starts a live run, `e` edits the
+owning config, `n` creates, `c` clones, `x` exports, `i` imports outside the
+Loop workspace, and `delete` deletes through `revrem config delete --yes`.
+
+The Prompts workspace lists built-in prompt fragments and triage contracts.
+When entered from Loop with `g`, `Enter` applies the highlighted asset's full
+text to the targeted scalar prompt field and returns to Loop. When opened
+directly with `4`, `Enter` only reports the highlighted asset. Editing
+`triage.routing.rule[].then.prompt_fragments` lists is deferred because that
+shape is list-valued while the current working-copy editor writes scalar dotted
+keys.
+
+Run controls remain in the Run workspace: `r` confirms/starts a real live run,
+`k` cancels an active live run, `l` toggles events/logs, and `o` surfaces the
+artifact directory. `Esc` exits route selection, returns focus, or cancels a
+prompt; `h`/`?` toggles contextual help, and `q` quits. Loading another profile
+into the loop is blocked while the current loop has unsaved edits, so a profile
+switch cannot silently discard the working copy.
+
+Live TUI runs are experimental but use the same execution path as the CLI. The
+TUI controller starts a managed `revrem` subprocess with the selected profile,
+forces machine-friendly child output (`--no-tty`, `--pending-review ignore`,
+`--summary-format json`), reads the child run's `events.jsonl` during refresh,
+and renders those events into a live Loop view. The Run workspace reuses the
+same phase geometry as the editable Loop screen while switching to status
+glyphs: `✓` done, `▶` running, `·` pending, and `⤫` disabled. Runner phase
+names are mapped explicitly (`remediate` displays as remediation, and checks
+come from `check_result` events), so the monitor reflects the actual event
+stream rather than a guessed phase vocabulary. The event/log pane shows the
+recent event tail by default; press `l` to toggle between events and live
+stdout/stderr buffers, and press `o` to surface the active artifact directory.
+There is no pause key because the live-run controller has stop/cancel semantics
+but no pause/resume primitive.
+During a live refresh, the monitor updates content in place and does not force
+workspace or pane focus changes; operators can keep working in Profiles/Loop/
+Prompts while the background run continues to stream.
+Profile updates performed in-session (for example via `e`/Edit) are re-resolved
+before the next live launch so changed settings (like `output.artifact_dir`) take
+effect immediately. If an edited profile is malformed, the refresh is rejected with
+a non-fatal notification, and the current in-session profile remains active.
+Cancellation runs in a background worker and sends `SIGINT` to the child process
+group first, so a normal active run writes the standard `cancellation` event and
+`summary.json` with exit code `5`; `SIGTERM` and `SIGKILL` are reserved for
+forced cleanup if the child does not exit. Once the child acknowledges `SIGINT`
+with its `cancellation` event, the controller allows one additional bounded grace
+interval for `summary.json` finalization before escalating. A direct interrupt
+path that exits before writing `summary.json` now surfaces as
+`interrupted-before-run-initialized` in the TUI monitor. The controller snapshots descendant
+PIDs before cancellation and performs bounded cleanup of those known nested
+provider children after the managed child exits. When no live run is active, cancellation is a no-op with
+explicit feedback. Quitting during an active live run requires a second `q`,
+then uses the same cancellation path before the TUI exits. If a profile points
+at a reused explicit artifact directory, the live monitor ignores stale
+`events.jsonl` and `summary.json` files until the child creates replacements for
+the current run.
 
 Codex, Claude, Gemini, opencode, and KiloCode are executable
 review/remediation harnesses through the shared adapter boundary. Their CLIs
@@ -1659,6 +1931,9 @@ artifact.
   resumability precondition failed.
 - `5`: the operator cancelled the run with Ctrl-C/SIGTERM and RevRem wrote
   best-effort cancellation artifacts.
+- `130`: operator interrupted a run before RevRem wrote summary artifacts
+  (including direct-SIGINT termination paths); the TUI status shown is
+  `interrupted-before-run-initialized`.
 - `6`: `revrem doctor --strict` found warning-level diagnostics.
 
 ### Operator guidance
@@ -1776,6 +2051,14 @@ Sigstore. Rollback, yanking, and hotfix steps live in
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.83 | 2026-09-01 | Codex | Documented repository-scoped profile editing, safety-preserving last-run replay, and durable inherited-map deletions |
+| 1.82 | 2026-09-01 | Codex | Clarified that Codex automatic approval and explicit sandbox flags are mutually exclusive |
+| 1.81 | 2026-09-01 | Codex | Documented current Codex automatic-approval mapping and text-only watched dogfood output |
+| 1.80 | 2026-07-12 | Codex | Documented editable Run Settings, truthful built-in checks, detected/recent check selection, contextual phase actions, and modal help |
+| 1.79 | 2026-07-11 | Codex | Documented atomic TUI bootstrap, focused Next Run presentation, explicit initial-review state, and stale-review validation selection |
+| 1.78 | 2026-07-11 | Codex | Documented structured last-run replay, pending-review selection, effective timeout labels, and asynchronous TUI startup |
+| 1.77 | 2026-07-10 | Codex | Documented the layered model catalog and local model invocation statistics |
+| 1.76 | 2026-06-28 | Codex | Documented stale-review validation ordering before triage/routing/remediation |
 | 1.75 | 2026-06-23 | Codex | Documented bundled expert profiles, examples, completions, demo regeneration, and the failure diagnostics guide |
 | 1.74 | 2026-06-23 | Codex | Aligned the example paid dogfood workflow with the documented `run-dogfood` label gate |
 | 1.73 | 2026-06-23 | Codex | Documented the no-provider GitHub Action smoke workflow and `run-dogfood` label gate before paid dogfood runs |
