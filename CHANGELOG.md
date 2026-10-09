@@ -19,6 +19,9 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Release candidates are marked as prereleases on GitHub and do not replace
+  the latest stable release.
+
 - Update the pinned setuptools build backend to 84.0.0, incorporating dependency
   PR #51 alongside the newer dependency versions already included in this branch.
 
