@@ -6,6 +6,8 @@ This project follows Semantic Versioning once public releases begin.
 
 ## [Unreleased]
 
+## [0.6.0rc1] - 2026-10-09
+
 ### Added
 
 - Current Codex catalog entries for GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol and
