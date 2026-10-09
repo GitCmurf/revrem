@@ -17,6 +17,9 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Update the pinned setuptools build backend to 84.0.0, incorporating dependency
+  PR #51 alongside the newer dependency versions already included in this branch.
+
 - Saved empty route-effort markers remain valid at launch with routing enabled
   or disabled. Recovery commit subjects skip final-review artifact headings.
 
