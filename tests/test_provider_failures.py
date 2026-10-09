@@ -1127,3 +1127,11 @@ def test_codex_catalog_alias_does_not_retry_remediation(
 
     assert result.returncode == 1
     assert len(calls) == 1
+
+
+def test_long_server_error_preserves_separate_reference():
+    result = _result(1, stderr="reviewed content\n" * 4000 +
+                     'Error: unexpected server error\n{"ref": "abc123"}\n')
+    failure = provider_failures.classify_provider_failure(result)
+    assert failure is not None
+    assert "ref=abc123" in failure.detail

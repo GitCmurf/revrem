@@ -49,10 +49,14 @@ the repository contains later live-TUI, model-catalog and bounded final-review
 remediation work. PLAN-007 records its implementation, while older roadmap
 sections describe historical baselines. No new public release is implied.
 
-The existing account-wide command resolves to uv's `revrem` environment and
-reports **0.4.0**. This is a different install from the checkout. The existing
-command remains untouched during readiness work; isolated rehearsal destinations
-live under `/tmp`. The local `origin/main` tracking ref predates 142 commits on
+At the initial 2026-10-06 check, the account-wide command resolved to uv's
+`revrem` environment and reported **0.4.0**. Initial readiness work used isolated
+rehearsal destinations under `/tmp`. On 2026-10-09, the operator promoted commit
+`1d90958` account-wide with TUI support and development checks enabled. Both PATH
+aliases now report 0.5.0; the wheel hash and doctor from an unrelated repository
+were verified. Legacy launcher backups are present; this first managed install
+has no previous managed release for automatic rollback. The local
+`origin/main` tracking ref predates 142 commits on
 this branch at the first implementation commit; integration into the public
 release branch still needs an explicit decision.
 
@@ -179,6 +183,49 @@ The recorded result is from the installed wheel, using real model calls, not the
 source checkout or fake harness.
 
 <!-- MEMINIT_SECTION: risk_management -->
+
+### GitHub integration: PR #52
+
+The full branch is open at <https://github.com/GitCmurf/revrem/pull/52>. Initial
+hosted tests exposed personal-profile and Codex dependencies in TUI fixtures.
+After isolating those fixtures and updating urllib3 to 2.8.0 and virtualenv to
+21.7.12, commit `0bf22b4` passed both Python jobs, all four Linux/macOS package
+jobs and the Action smoke job. These seven GitHub Actions checks are now
+required on `main`, with an up-to-date base required. Local validation of that
+commit passed 2,016 tests with 10 skipped.
+
+CodeRabbit's hosted full review was skipped at its 100-file limit; its CLI full
+review was rejected at 150 files. Both counted 177 reviewable files. Those
+statuses do not establish a clean review. A scoped CLI review covered all 61
+changed runtime files and returned seven minor findings and one major finding,
+with an unverified-findings warning. Reproductions confirmed the wizard,
+telemetry, process decoding, timeout editor and unsupported-effort issues. The
+major request to change explicit `latest` semantics was rejected: the behavior
+is intentional and tested; its stale CLI help was corrected. The suggestion to
+advertise Spark capabilities was also rejected because current Codex metadata
+does not establish them. Unknown Codex models continue to warn and pass through.
+
+A second runtime CLI pass again covered all 61 files and returned eight minor
+findings with the same unverified-findings warning. Regressions cover static
+preset false positives, forced-cleanup timeout/output, split error references,
+boolean token counts, recovery commit context, catalog parse diagnostics and
+invalid effort persistence. The preset-cloning hint now names the Profiles
+workspace. These fixes do not turn the scoped reviews into full-PR coverage.
+
+Greptile also reviewed the PR and reported route-clear persistence, acceptance
+isolation, saved-model effort cycling and live check-state defects. Regression
+tests cover the reproduced failures. A follow-up finding showed wizard replay
+could discard restored routes when preview and launch reloaded the disk profile.
+Replay now preserves changed triage settings in a private `.revrem/tmp/wizard` profile
+snapshot used by both paths, including when routing on disk has been disabled.
+Acceptance now isolates operator settings,
+including malformed personal configuration and Git overrides. The full local development gate passed 2,049 tests with 10 opt-in skips, Ruff,
+mypy, all 10 import contracts and DocOps. The later wizard snapshot regression
+also passed its focused wizard suite. Non-pytest pre-commit hooks passed.
+Qodo review is blocked by an inactive subscription. Paid RevRem dogfooding remains disabled.
+No merge, version bump, tag or public release has been performed. Subsequent PR
+fixes do not automatically update the installed `1d90958` release.
+
 <!-- AGENT: Identify risks, impact, and mitigation strategies. -->
 
 ## 5. Risks and Mitigations
@@ -212,8 +259,8 @@ source checkout or fake harness.
    `revrem doctor` from the target repository with its actual test command.
 3. Merge the example current-Codex profile into existing user or project
    profiles only if desired. Do not replace established profile configuration.
-4. Decide branch integration and public versioning separately. No push, tag,
-   release, Git hook or global profile mutation was performed in this work.
+4. Complete branch integration through PR #52 and decide public versioning
+   separately. No tag, release, Git hook or global profile mutation was performed.
 5. For broader provider adoption, refresh provider-specific live evidence and
    resolve the documented external-prompt truncation coverage work (TD-008).
    The remaining ANSI-state refactor (TD-009) and release provenance/Scorecard

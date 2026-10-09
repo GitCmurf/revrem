@@ -736,7 +736,9 @@ def commit_message_fallback_context(
     iterations = context_iterations or (iteration,)
     for item_iteration in iterations:
         item_parts: list[str] = []
-        for name in _commit_context_artifact_names(item_iteration):
+        for name in _commit_context_artifact_names(
+            item_iteration, max_iterations=config.max_iterations
+        ):
             path = config.artifact_dir / name
             if not path.is_file():
                 continue
@@ -750,9 +752,15 @@ def commit_message_fallback_context(
     return prompts_composer.trim_for_prompt("\n\n".join(parts), 20_000)
 
 
-def _commit_context_artifact_names(iteration: int) -> tuple[str, ...]:
+def _commit_context_artifact_names(iteration: int, *, max_iterations: int) -> tuple[str, ...]:
+    recovery_index = iteration - max_iterations
+    review_names: tuple[str, ...] = (f"review-{iteration}.txt",)
+    if recovery_index == 1:
+        review_names += ("review-final.txt",)
+    elif recovery_index > 1:
+        review_names += (f"review-final-recovery-{recovery_index - 1}.txt",)
     return (
-        f"review-{iteration}.txt",
+        *review_names,
         f"triage-{iteration}.json",
         f"triage-{iteration}.txt",
         f"remediation-{iteration}.txt",

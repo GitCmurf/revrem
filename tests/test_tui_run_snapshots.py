@@ -113,7 +113,8 @@ inner_check_retries = 2
         ),
     )
     assert "inner retry 1/2" in svg
-    assert "✓ checks · done · failed · inner retry 1/2" in svg
+    assert "· checks · pending" in svg
+    assert "done · failed" not in svg
     assert_svg_snapshot("tui_run/inner-retry", svg)
 
 

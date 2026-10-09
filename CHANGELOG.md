@@ -17,6 +17,31 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Wizard replay retains restored triage routes and prompts through a private
+  profile snapshot under `.revrem/tmp/wizard`, shared by preview and launch commands.
+
+- Forced cancellation retains current output and reports incomplete cleanup if
+  the process still cannot exit. Recovery commit messages retain final-review
+  findings, and long provider errors retain references from their diagnostic tail.
+- Check presets require actual Ruff/mypy configuration, malformed catalog errors
+  identify their file, and preset hints explain where cloning is available.
+- Invalid effort values are rejected before profile saving, including inactive
+  phases and providers without effort support. Boolean token values are ignored.
+
+- Clearing route fields keeps inherited defaults cleared after saving. Effort
+  cycling uses each saved model's supported choices, and the Checks timeout
+  editor now reads and saves the pipeline timeout.
+- The live monitor tracks the running check and resets results between inner
+  retries; malformed process-output bytes no longer interrupt draining or
+  cancellation.
+- Installed acceptance isolates operator profiles, catalogs and Git settings.
+- CLI help now describes explicit `latest` selection accurately, and providers
+  that ignore reasoning effort no longer receive irrelevant catalog warnings.
+- Optional model telemetry no longer prevents summary output when its event
+  stream is unreadable or has sequence gaps. Summaries discard stale token
+  totals and preserve event-level phase and iteration over payload fields.
+- Wizard startup skips pending-review discovery for settings rejected by the
+  argument parser, allowing the wizard to continue.
 - TUI regression fixtures now own their profiles and fake remediation harnesses,
   so tests and profile snapshots work without personal configuration or Codex.
 - Updated locked development dependencies to urllib3 2.8.0 and virtualenv

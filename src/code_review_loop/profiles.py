@@ -1109,16 +1109,17 @@ def _profile_toml_value(
 
 
 def _merged_profile_raw_for_edit(
-    name: str, *, user_file: ProfileFile, project_file: ProfileFile
+    name: str, *, user_file: ProfileFile, project_file: ProfileFile,
+    exclude_owner: Path | None = None,
 ) -> dict[str, Any]:
     raw: dict[str, Any] = {}
     if user_file.defaults is not None:
         raw = _deep_merge(raw, user_file.raw_defaults)
-    if name in user_file.profiles:
+    if name in user_file.profiles and user_file.path != exclude_owner:
         raw = _deep_merge(raw, user_file.raw_profiles[name])
     if project_file.defaults is not None:
         raw = _deep_merge(raw, project_file.raw_defaults)
-    if name in project_file.profiles:
+    if name in project_file.profiles and project_file.path != exclude_owner:
         raw = _deep_merge(raw, project_file.raw_profiles[name])
     return raw
 
@@ -1262,6 +1263,9 @@ def save_profile_raw(
     raw_profile = _materialize_inherited_route_clear_markers(
         raw_profile,
         current_profile=current,
+        inherited_profile=_merged_profile_raw_for_edit(
+            name, user_file=user_file, project_file=project_file, exclude_owner=owner
+        ),
     )
     merged_updated = _apply_profile_patch_with_clears(merged, raw_profile)
     edit_reference = parse_profile(name, merged, source="<edit>", catalog_cwd=cwd)
@@ -1357,6 +1361,7 @@ def _materialize_inherited_route_clear_markers(
     raw_profile: dict[str, Any],
     *,
     current_profile: dict[str, Any],
+    inherited_profile: dict[str, Any],
 ) -> dict[str, Any]:
     """Preserve clear of inherited route fields as explicit overrides."""
     routes = raw_profile.get("triage")
@@ -1387,6 +1392,9 @@ def _materialize_inherited_route_clear_markers(
         current_route = current_routes.get(route_name)
         if not isinstance(current_route, dict):
             current_route = {}
+        inherited_route = _raw_dotted_mapping(inherited_profile, "triage.routes").get(route_name, {})
+        if not isinstance(inherited_route, dict):
+            inherited_route = {}
         for field, clear_value in (
             ("model", ""),
             ("fallback", ""),
@@ -1399,7 +1407,7 @@ def _materialize_inherited_route_clear_markers(
             if (
                 field in route_delta
                 and route_delta.get(field) is None
-                and field not in current_route
+                and (field not in current_route or field in inherited_route)
             ):
                 route_delta[field] = clear_value
     return merged

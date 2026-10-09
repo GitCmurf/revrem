@@ -522,3 +522,11 @@ class TestCommitMessageSideEffects:
         )
         assert side_effects["created_paths_removed"] == []
         assert side_effects["unsafe_status_lines"] == ["?? ../escape.txt"]
+
+
+@pytest.mark.parametrize("iteration,source", [(3, "review-final.txt"), (4, "review-final-recovery-1.txt")])
+def test_recovery_commit_context_retains_source_findings(tmp_path, iteration, source):
+    (tmp_path / source).write_text("recovery finding", encoding="utf-8")
+    config = LoopConfig(cwd=tmp_path, artifact_dir=tmp_path, max_iterations=2)
+    context = commit_message_fallback_context(config, iteration)
+    assert f"{source}:\nrecovery finding" in context

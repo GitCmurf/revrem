@@ -7,12 +7,47 @@ from pathlib import Path
 import pytest
 
 import tests.support.application_runner as runner_mod
-from code_review_loop import artifacts, reporting
+from code_review_loop import artifacts, events, reporting
 from code_review_loop.cli.main import _redacted_argv
 from code_review_loop.config import LoopConfig
 from code_review_loop.core.ports import CommandResult
 from code_review_loop.invocation import invocation_payload
 from code_review_loop.runtime import format_terminal_summary
+
+
+@pytest.mark.parametrize("stream", ["gap", "missing", "no-tokens", "unreadable"])
+def test_summary_survives_unavailable_telemetry_without_stale_totals(tmp_path, monkeypatch, stream):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    config = LoopConfig(cwd=tmp_path, artifact_dir=artifact_dir)
+    event = events.make_event(run_id="test", seq=2 if stream == "gap" else 1,
+                              kind="model_invocation", phase="review", payload={"model": "test"})
+    if stream != "missing":
+        (artifact_dir / events.EVENTS_FILENAME).write_text(
+            json.dumps(event.to_dict()) + "\n", encoding="utf-8")
+    if stream == "unreadable":
+        def fail_read(path):
+            raise OSError("unreadable telemetry")
+        monkeypatch.setattr(events, "read_events", fail_read)
+    summary = {"final_status": "clear", "tokens": {"total": 999},
+               "model_invocations": [{"model": "stale"}]}
+    reporting.write_summary(config, summary)
+    saved = json.loads((artifact_dir / "summary.json").read_text(encoding="utf-8"))
+    assert saved["final_status"] == "clear"
+    assert saved["tokens"] is None
+    assert [row["model"] for row in saved["model_invocations"]] == (
+        ["test"] if stream == "no-tokens" else [])
+
+
+def test_summary_invocations_preserve_event_phase_and_iteration(tmp_path):
+    event = events.make_event(run_id="test", seq=1, kind="model_invocation", phase="review",
+                              iteration=2, payload={"phase": "remediation", "iteration": 99, "tokens": 5})
+    (tmp_path / events.EVENTS_FILENAME).write_text(json.dumps(event.to_dict()) + "\n", encoding="utf-8")
+    summary = {}
+    reporting.add_model_invocations(summary, tmp_path)
+    assert summary["model_invocations"][0]["phase"] == "review"
+    assert summary["model_invocations"][0]["iteration"] == 2
+    assert summary["tokens"]["total"] == 5
 
 
 def test_summary_includes_latest_review_excerpt_and_artifact_paths(tmp_path):
@@ -1199,3 +1234,12 @@ def test_unknown_final_review_is_recorded_in_diagnostics(tmp_path):
     assert summary["bug_report_path"] == str(report_path)
     assert report_path.is_file()
     assert final_status_path.is_file()
+
+
+def test_summary_does_not_count_boolean_tokens(tmp_path):
+    event = events.make_event(run_id="test", seq=1, kind="model_invocation",
+                              payload={"tokens": True})
+    (tmp_path / events.EVENTS_FILENAME).write_text(json.dumps(event.to_dict()) + "\n", encoding="utf-8")
+    summary = {}
+    reporting.add_model_invocations(summary, tmp_path)
+    assert summary["tokens"] is None

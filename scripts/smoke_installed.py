@@ -24,9 +24,17 @@ def smoke(python: Path) -> None:
             path.mkdir(parents=True)
             (path / "review.txt").write_text(response)
             (path / "remediation.txt").write_text("No edit in deterministic smoke.\n")
-        env = {**os.environ, "REVREM_ALLOW_FAKE_HARNESS": "1",
+        # The acceptance fixture must not load operator profiles, Codex catalogs,
+        # or Git overrides; a bad personal setting must not block rollback.
+        isolated_home = root / "home"
+        isolated_home.mkdir()
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        env.update({"HOME": str(isolated_home), "CODEX_HOME": str(root / "codex"),
+               "XDG_CONFIG_HOME": str(root / "config"),
+               "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+               "REVREM_ALLOW_FAKE_HARNESS": "1",
                "REVREM_FAKE_HARNESS_FIXTURE_DIR": str(fixtures),
-               "XDG_DATA_HOME": str(root / "data")}
+               "XDG_DATA_HOME": str(root / "data")})
 
         def run(args: list[str], expected: int = 0) -> str:
             result = subprocess.run(args, cwd=repo, env=env, capture_output=True,

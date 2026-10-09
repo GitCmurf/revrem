@@ -582,7 +582,8 @@ def build_run_parser() -> RevRemArgumentParser:
         default=None,
         help=(
             "Start by remediating a previous review artifact. Use 'latest' for the newest "
-            "compatible usable non-clear generated review; if none exists, start with a fresh review."
+            "usable unresolved generated review, even after HEAD changes; errors if none exists. "
+            "Add --initial-review-mode compatible to require matching Git state."
         ),
     )
     parser.add_argument(

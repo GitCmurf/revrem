@@ -137,3 +137,13 @@ def test_recent_check_presets_filters_by_repository_before_history_limit(
     presets = check_presets.recent_check_presets(repo, history_limit=20)
 
     assert [preset.checks for preset in presets] == [("pytest -q",)]
+
+
+def test_static_presets_ignore_comments_and_urls(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "src").mkdir()
+    (tmp_path / "pyproject.toml").write_text(
+        '# [tool.ruff] and mypy are not configured\n[project]\n'
+        'name="ruff-mypy-demo"\n', encoding="utf-8"
+    )
+    assert "python-static" not in {preset.key for preset in check_presets.detect_check_presets(tmp_path)}

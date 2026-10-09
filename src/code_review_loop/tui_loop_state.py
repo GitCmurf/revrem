@@ -34,7 +34,7 @@ PHASE_DOTTED: dict[str, dict[str, str]] = {
         "effort": "remediation.reasoning_effort",
         "timeout": "remediation.timeout_seconds",
     },
-    "checks": {},
+    "checks": {"timeout": "pipeline.check_timeout_seconds"},
     "commit": {
         "enabled": "commit.enabled",
         "harness": "commit.harness",

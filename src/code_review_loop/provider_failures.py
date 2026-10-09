@@ -60,7 +60,7 @@ def classify_provider_failure(
             True,
         )
     if _matches_any(normalized, SERVER_ERROR_PATTERNS):
-        ref = _extract_error_ref(classification_output)
+        ref = _extract_error_ref(output[-50_000:])
         suffix = f" ref={ref}" if ref else ""
         return ProviderFailure("provider_server_error", f"provider server error{suffix}", True)
     if _matches_any(normalized, TRANSIENT_PATTERNS):

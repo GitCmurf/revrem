@@ -22,6 +22,15 @@ class _TtyStringIO(StringIO):
         return True
 
 
+def test_startup_pending_review_skips_unparseable_state(tmp_path):
+    app = wizard._Wizard(cwd=tmp_path, stdin=StringIO(), stdout=StringIO(), stderr=StringIO())
+    profile = profiles.resolve_defaults(cwd=tmp_path, require_implemented=False)
+    state = wizard._initial_state(wizard.WizardProfileChoice(profile_name=None, profile=profile), cwd=tmp_path)
+    state.summary_format = "obsolete-format"
+    app._apply_startup_pending_review(state)
+    assert state.initial_review_file == ""
+
+
 class _KeyboardInterruptInput(StringIO):
     def readline(self, *args, **kwargs):
         raise KeyboardInterrupt
@@ -417,14 +426,15 @@ def test_last_run_prefers_structured_resume_config_over_redacted_display_command
     ]
 
 
-def test_last_run_rehydrates_persisted_triage_snapshot_before_overrides(tmp_path):
+@pytest.mark.parametrize("ambient_routing", ["true", "false"])
+def test_last_run_rehydrates_persisted_triage_snapshot_before_overrides(tmp_path, ambient_routing):
     (tmp_path / ".revrem.toml").write_text(
         "[profiles.demo.triage]\n"
         "enabled = true\n"
         "contract = 'v2'\n"
         "prompt = 'ambient prompt'\n"
         "[profiles.demo.triage.routing]\n"
-        "enabled = true\n"
+        f"enabled = {ambient_routing}\n"
         "default_route = 'ambient'\n"
         "[profiles.demo.triage.routes.ambient]\n"
         "harness = 'codex'\n",
@@ -451,6 +461,14 @@ def test_last_run_rehydrates_persisted_triage_snapshot_before_overrides(tmp_path
     assert state.profile.triage.prompt == "persisted prompt"
     assert state.profile.triage.routing.default_route == "persisted"
     assert set(state.profile.triage.routes) == {"persisted"}
+
+    preview_config = wizard._config_for_state(state, tmp_path)
+    assert preview_config.profile_v2.triage.prompt == "persisted prompt"
+    assert set(preview_config.profile_v2.triage.routes) == {"persisted"}
+    assert preview_config.profile_v2.triage.routing.default_route == "persisted"
+    args = wizard.cli_args.parse_args([*wizard._argv_for_state(state), "--dry-run"])
+    launched, _ = wizard.build_loop_config(args, tmp_path, require_implemented=False)
+    assert launched.profile_v2.triage == preview_config.profile_v2.triage
 
 
 def test_last_run_skips_stale_structured_parser_choices(tmp_path, monkeypatch):

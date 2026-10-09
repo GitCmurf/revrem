@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tomllib
 from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
@@ -41,10 +42,15 @@ def detect_check_presets(cwd: Path) -> tuple[CheckPreset, ...]:
 
     static_checks: list[str] = []
     if pyproject.is_file():
-        text = _read_text_best_effort(pyproject)
-        if "[tool.ruff" in text or "ruff" in text:
+        try:
+            tool_config = tomllib.loads(_read_text_best_effort(pyproject)).get("tool", {})
+        except tomllib.TOMLDecodeError:
+            tool_config = {}
+        if not isinstance(tool_config, dict):
+            tool_config = {}
+        if isinstance(tool_config.get("ruff"), dict):
             static_checks.append("ruff check .")
-        if ("[tool.mypy" in text or "mypy" in text) and (root / "src").is_dir():
+        if isinstance(tool_config.get("mypy"), dict) and (root / "src").is_dir():
             static_checks.append("mypy src")
     if static_checks:
         presets.append(

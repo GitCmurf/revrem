@@ -2157,7 +2157,9 @@ class _RevRemAppMixin:
             return ""
         phase_config = getattr(self._loop_diagram.model.profile, phase, None)
         fallback = None
-        if phase_config is not None:
+        if phase == "checks" and field == "timeout":
+            fallback = self._loop_diagram.model.profile.pipeline.check_timeout_seconds
+        elif phase_config is not None:
             fallback = (
                 getattr(
                     phase_config,
@@ -2329,7 +2331,7 @@ class _RevRemAppMixin:
         if model.profile.source == profiles.BUILTIN_PROFILE_SOURCE:
             _notify(
                 self,
-                f"Loaded preset '{name}' read-only; press c to clone before editing.",
+                f"Loaded preset '{name}' read-only; open Profiles (3), then press c to clone before editing.",
             )
         else:
             _notify(self, f"Loaded {name} into the loop.")

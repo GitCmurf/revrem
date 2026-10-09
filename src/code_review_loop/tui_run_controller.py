@@ -175,6 +175,8 @@ class LiveRunController:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 start_new_session=True,
             )
         except OSError as exc:
@@ -237,7 +239,14 @@ class LiveRunController:
         except subprocess.TimeoutExpired:
             _signal_process_group(self.process, signal.SIGKILL)
             _signal_descendant_process_groups(descendants, signal.SIGKILL)
-            self.process.wait(timeout=grace_seconds)
+            try:
+                self.process.wait(timeout=grace_seconds)
+            except subprocess.TimeoutExpired:
+                self.message = "process has not exited after SIGKILL; cleanup is incomplete"
+            for thread in self._drain_threads:
+                thread.join(timeout=1)
+            self.stdout_tail = self._stdout_buffer.lines
+            self.stderr_tail = self._stderr_buffer.lines
             self.status = "failed-forced-cleanup"
             self.exit_code = self.process.returncode
             return self.status
@@ -546,7 +555,7 @@ def _descendant_identity(pid: int) -> DescendantIdentity | None:
     """
     proc_stat = Path(f"/proc/{pid}/stat")
     try:
-        start_time = _start_time_from_proc_stat(proc_stat.read_text(encoding="utf-8"))
+        start_time = _start_time_from_proc_stat(proc_stat.read_text(encoding="utf-8", errors="replace"))
     except OSError:
         start_time = None
     if start_time is not None:

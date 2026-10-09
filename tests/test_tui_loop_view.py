@@ -191,7 +191,7 @@ def test_phase_card_timeout_overlay_formats_int_and_float_values(
     )
 
 
-def test_checks_phase_is_display_only(tmp_path: Path) -> None:
+def test_checks_phase_exposes_only_timeout_field(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         "[profiles.p]\n[profiles.p.pipeline]\nbase='main'\nchecks=['pytest -q']\n",
@@ -204,7 +204,7 @@ def test_checks_phase_is_display_only(tmp_path: Path) -> None:
     assert "check-failure retries: 0" in expanded
     assert "p choose checks" in expanded
     assert "harness" not in expanded and "model" not in expanded
-    assert tui_loop_state.PHASE_DOTTED["checks"] == {}
+    assert tui_loop_state.PHASE_DOTTED["checks"] == {"timeout": "pipeline.check_timeout_seconds"}
 
 
 def test_loop_header_and_rails_reflect_unsaved_meta_edits(tmp_path: Path) -> None:

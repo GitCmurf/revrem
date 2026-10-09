@@ -559,6 +559,40 @@ def test_loop_diagram_current_phase_clamps_index(tmp_path):
     asyncio.run(run())
 
 
+def test_checks_timeout_editor_loads_edits_and_saves_pipeline_timeout(tmp_path):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        (repo / ".revrem.toml").write_text(
+            "[profiles.demo.pipeline]\ncheck_timeout_seconds = 42\n", encoding="utf-8")
+        async with pilot_app(cwd=repo, home=tmp_path / "home", profile_name="demo") as (app, pilot):
+            diagram = app.query_one("#loop-diagram")
+            diagram.focused_index = tui_loop_state.LOOP_PHASES.index("checks")
+            assert app._loop_text_field_value("timeout") == "42.0"
+            diagram.set_text_field("timeout", "123")
+            assert diagram.model.is_dirty
+            assert app._loop_text_field_value("timeout") == "123.0"
+            diagram.model.save()
+            from code_review_loop import profiles
+            saved = profiles.resolve_profile("demo", cwd=repo, home=tmp_path / "home")
+            assert saved.pipeline.check_timeout_seconds == 123
+
+    asyncio.run(run())
+
+
+def test_effort_cycle_uses_saved_model_capabilities(tmp_path):
+    async def run() -> None:
+        repo = init_repo(tmp_path / "repo")
+        (repo / ".revrem.toml").write_text(
+            '[profiles.demo.review]\nmodel="gpt-6-luna"\nreasoning_effort="max"\n', encoding="utf-8")
+        async with pilot_app(cwd=repo, home=tmp_path / "home", profile_name="demo") as (app, pilot):
+            diagram = app.query_one("#loop-diagram")
+            diagram.focused_index = tui_loop_state.LOOP_PHASES.index("review")
+            diagram.cycle_field("effort")
+            assert diagram.model.field_value("review.reasoning_effort", None) == "low"
+
+    asyncio.run(run())
+
+
 def test_loop_save_persists_and_clears_dirty(tmp_path):
     async def run() -> None:
         repo = tmp_path / "repo"
@@ -711,7 +745,7 @@ def test_profiles_workspace_warns_when_loading_builtin_preset(tmp_path):
             assert app._workspace == "loop"
             assert app._loop_diagram.model.name == selected
             assert any(
-                "read-only" in message and "press c to clone" in message
+                "read-only" in message and "Profiles (3)" in message and "press c to clone" in message
                 for message in notifications
             )
 

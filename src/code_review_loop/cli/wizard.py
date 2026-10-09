@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shlex
 import sys
+import tempfile
 import tomllib
 from dataclasses import dataclass, replace
 from os import environ
@@ -97,6 +98,7 @@ class WizardState:
     origin_label: str = ""
     origin_command: str = ""
     stale_triage_reasoning_effort: str = ""
+    profile_snapshot_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -333,7 +335,7 @@ class _Wizard:
             return
         try:
             config = _config_for_state(state, self.cwd)
-        except (OSError, RuntimeError, ValueError):
+        except (OSError, RuntimeError, SystemExit, ValueError):
             return
         compatible = _pending_review_candidate_for_config(config, compatible=True)
         mode = "prompt" if state.pending_review == "profile" else state.pending_review
@@ -1178,12 +1180,47 @@ def _state_from_resume_config(
     except (OSError, ValueError):
         return None
 
+    original_profile = profile
     try:
         profile = resume.rehydrate_profile_triage(profile, payload)
     except ValueError:
         return None
 
+    snapshot_path = None
+    if profile.triage != original_profile.triage:
+        # CLI flags cannot encode a route table. Retain the restored profile for
+        # preview, copied commands, and launch instead of reloading ambient routes.
+        profile_name = profile_name or "wizard-last-run"
+        profile = replace(profile, name=profile_name)
+        raw_profile: dict[str, object] = {}
+        if profiles.profile_runtime_key_explicit(
+            original_profile.name, cwd, "external_review_input_chars"
+        ):
+            raw_profile = {
+                "runtime": {
+                    "external_review_input_chars": profile.runtime.external_review_input_chars
+                }
+            }
+        snapshot_text = profiles.profile_to_toml(
+            profile,
+            include_wrapper=True,
+            omit_builtin_defaults=True,
+            raw_profile=raw_profile,
+        )
+        try:
+            directory = cwd / ".revrem" / "tmp" / "wizard"
+            directory.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", prefix="last-run-", suffix=".toml",
+                dir=directory, delete=False,
+            ) as snapshot:
+                snapshot.write(snapshot_text)
+                snapshot_path = Path(snapshot.name)
+        except OSError:
+            return None
+
     state = _initial_state(WizardProfileChoice(profile_name=profile_name, profile=profile), cwd=cwd)
+    state.profile_snapshot_path = snapshot_path
 
     def text(key: str) -> str | None:
         value = payload.get(key)
@@ -1455,6 +1492,8 @@ def _argv_for_state(state: WizardState) -> list[str]:
     argv: list[str] = []
     if state.profile_name:
         argv.extend(["--profile", state.profile_name])
+    if state.profile_snapshot_path is not None:
+        argv.extend(["--profile-snapshot", str(state.profile_snapshot_path)])
     if state.base != profile.pipeline.base:
         argv.extend(["--base", state.base])
     if state.max_iterations != profile.pipeline.max_iterations:

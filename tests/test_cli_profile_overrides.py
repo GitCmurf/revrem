@@ -1707,7 +1707,7 @@ def test_validate_model_selections_skips_routing_when_routing_disabled(tmp_path,
         review_model="review-model",
         review_reasoning_effort="medium",
         triage_enabled=True,
-        triage_harness="gemini",
+        triage_harness="codex",
         triage_model="triage-model",
         triage_reasoning_effort="low",
         remediation_model="remediation-model",
@@ -1720,7 +1720,7 @@ def test_validate_model_selections_skips_routing_when_routing_disabled(tmp_path,
                 routing=profiles.TriageRoutingConfig(enabled=False),
                 routes={
                     "stale": profiles.TriageRouteConfig(
-                        harness="claude",
+                        harness="codex",
                         model="route-model",
                     )
                 },
@@ -1733,7 +1733,7 @@ def test_validate_model_selections_skips_routing_when_routing_disabled(tmp_path,
     assert calls == [
         ("codex", "review-model", "medium"),
         ("codex", "remediation-model", "low"),
-        ("gemini", "triage-model", "low"),
+        ("codex", "triage-model", "low"),
     ]
 
 
@@ -1759,7 +1759,7 @@ def test_validate_model_selections_only_validates_commit_message_when_enabled(
         remediation_model="remediation-model",
         remediation_reasoning_effort="low",
         commit_after_remediation=False,
-        commit_message_harness="gemini",
+        commit_message_harness="codex",
         commit_message_model="commit-model",
         commit_reasoning_effort="high",
         triage_enabled=False,
@@ -1779,7 +1779,7 @@ def test_validate_model_selections_only_validates_commit_message_when_enabled(
         remediation_model="remediation-model",
         remediation_reasoning_effort="low",
         commit_after_remediation=True,
-        commit_message_harness="gemini",
+        commit_message_harness="codex",
         commit_message_model="commit-model",
         commit_reasoning_effort="high",
         triage_enabled=False,
@@ -1788,5 +1788,5 @@ def test_validate_model_selections_only_validates_commit_message_when_enabled(
     assert calls == [
         ("codex", "review-model", "medium"),
         ("codex", "remediation-model", "low"),
-        ("gemini", "commit-model", "high"),
+        ("codex", "commit-model", "high"),
     ]

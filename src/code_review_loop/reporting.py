@@ -160,12 +160,18 @@ def write_summary(
 
 def add_model_invocations(summary: dict[str, object], artifact_dir: Path) -> None:
     event_path = artifact_dir / events.EVENTS_FILENAME
-    if not event_path.is_file():
-        summary.setdefault("model_invocations", [])
+    # Recompute telemetry each time; a reused summary must not retain old totals.
+    summary["model_invocations"] = []
+    summary["tokens"] = None
+    try:
+        if not event_path.is_file():
+            return
+        recorded, _truncated = events.read_events(event_path)
+    except (OSError, ValueError):
+        # Optional telemetry must not prevent the authoritative outcome artifact.
         return
-    recorded, _truncated = events.read_events(event_path)
     invocations = [
-        {"phase": event.phase, "iteration": event.iteration, **event.payload}
+        {**event.payload, "phase": event.phase, "iteration": event.iteration}
         for event in recorded
         if event.kind == "model_invocation"
     ]
@@ -173,7 +179,7 @@ def add_model_invocations(summary: dict[str, object], artifact_dir: Path) -> Non
     token_values: list[int] = []
     for item in invocations:
         value = item.get("tokens")
-        if isinstance(value, int):
+        if isinstance(value, int) and not isinstance(value, bool):
             token_values.append(value)
     if token_values:
         summary["tokens"] = {

@@ -6,6 +6,8 @@ import os
 import subprocess
 from importlib import import_module
 
+import pytest
+
 from code_review_loop import application as application_mod
 from code_review_loop import profiles
 from code_review_loop.core.outcome import OutcomeClear
@@ -15,6 +17,15 @@ config_builder = import_module("code_review_loop.cli.config_builder")
 config_command = import_module("code_review_loop.cli.commands.config")
 history_command = import_module("code_review_loop.cli.commands.history")
 suppress_command = import_module("code_review_loop.cli.commands.suppress")
+
+
+def test_latest_help_matches_explicit_selection_contract(capsys):
+    with pytest.raises(SystemExit) as raised:
+        cli_main.main(["--help"])
+    assert raised.value.code == 0
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "even after HEAD changes; errors if none exists" in help_text
+    assert "--initial-review-mode compatible to require matching Git state" in help_text
 
 
 class _TTYStringIO(io.StringIO):

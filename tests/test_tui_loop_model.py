@@ -298,6 +298,38 @@ def test_route_row_clear_inherited_optional_fields_persists_empty_override(tmp_p
     assert resolved.triage.routes["security"].fallback == ""
 
 
+def test_route_clear_masks_defaults_even_when_profile_also_overrides(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    _write(repo / ".revrem.toml", """
+[defaults.triage.routing]
+default_route = "security"
+[defaults.triage.routes.security]
+harness = "codex"
+model = "inherited-model"
+reasoning_effort = "medium"
+fallback = "backup"
+[defaults.triage.routes.backup]
+harness = "codex"
+[profiles.p.triage.routing]
+default_route = "security"
+[profiles.p.triage.routes.backup]
+harness = "codex"
+[profiles.p.triage.routes.security]
+harness = "codex"
+model = "local-model"
+reasoning_effort = "high"
+fallback = "backup"
+""")
+    model = LoopEditModel.load("p", cwd=repo)
+    for field in ("model", "reasoning_effort", "fallback"):
+        model.set_field(f"triage.routes.security.{field}", None)
+    model.save()
+    saved = profiles.resolve_profile("p", cwd=repo, require_implemented=False)
+    for field in ("model", "reasoning_effort", "fallback"):
+        assert getattr(saved.triage.routes["security"], field) == ""
+
+
 def test_route_row_clear_inherited_reasoning_effort_and_timeout(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)

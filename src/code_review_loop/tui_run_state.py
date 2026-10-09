@@ -115,10 +115,18 @@ def run_loop_view(records: tuple[Any, ...] | list[Any], profile: profiles.Profil
         phase = getattr(event, "phase", None) or ""
         display = RUNNER_PHASE_TO_DISPLAY.get(phase)
         kind = getattr(event, "kind", "")
+        if display == "checks" and kind == "phase_start":
+            states["checks"] = "running"
+            details["checks"] = ""
         if display is not None and states.get(display) != "disabled":
             if kind == "phase_start":
                 states[display] = "running"
                 if display == "remediation":
+                    if enabled.get("checks") or any_check_result:
+                        states["checks"] = "pending"
+                    details["checks"] = ""
+                    any_check_result = False
+                    last_check_status = None
                     if last_remediate_iteration != event_outer_iteration:
                         remediate_starts_this_iteration = 0
                         last_remediate_iteration = event_outer_iteration
@@ -136,6 +144,7 @@ def run_loop_view(records: tuple[Any, ...] | list[Any], profile: profiles.Profil
 
         if kind == "check_result":
             any_check_result = True
+            states["checks"] = "done"
             payload = getattr(event, "payload", {})
             status = payload.get("status") if isinstance(payload, dict) else None
             if isinstance(status, str):
@@ -153,8 +162,7 @@ def run_loop_view(records: tuple[Any, ...] | list[Any], profile: profiles.Profil
                 elif last_check_status is None:
                     last_check_status = "passed"
 
-    if any_check_result:
-        states["checks"] = "done"
+    if any_check_result and states["checks"] == "done":
         if last_check_status == "failed":
             details["checks"] = "failed"
         elif last_check_status == "passed":

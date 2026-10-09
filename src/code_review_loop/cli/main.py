@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
+from code_review_loop import harnesses
 from code_review_loop.adapters.phase_support import TRIAGE_PHASE
 from code_review_loop.cli.args import parse_args
 from code_review_loop.cli.commands.profile import save_profile_from_args
@@ -24,7 +25,7 @@ from code_review_loop.cli.exit import map_application_call
 from code_review_loop.cli.wizard import run_wizard
 from code_review_loop.git_status import non_artifact_status_entries_from_status_z
 from code_review_loop.invocation import invocation_payload, redact_argv
-from code_review_loop.model_catalog import validate_selection
+from code_review_loop.model_catalog import KNOWN_EFFORTS, validate_selection
 from code_review_loop.prompts_composer import trim_for_prompt
 
 
@@ -117,6 +118,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _validate_model_selections(config) -> None:
+    # Validate persisted values even for inactive phases and non-Codex drivers.
+    for field in (
+        "reasoning_effort", "review_reasoning_effort", "remediation_reasoning_effort",
+        "triage_reasoning_effort", "commit_reasoning_effort",
+    ):
+        effort = getattr(config, field)
+        if effort is not None and effort not in KNOWN_EFFORTS:
+            raise ValueError(
+                f"{field}: reasoning effort {effort!r} is not one of: {', '.join(KNOWN_EFFORTS)}"
+            )
+    if config.profile_v2 is not None:
+        for name, route in config.profile_v2.triage.routes.items():
+            if route.reasoning_effort is not None and route.reasoning_effort not in KNOWN_EFFORTS:
+                raise ValueError(f"route {name}: unknown reasoning effort {route.reasoning_effort!r}")
     selections: list[tuple[str, str, str | None, str | None]] = [
         (
             "review",
@@ -150,6 +165,8 @@ def _validate_model_selections(config) -> None:
             )
         )
     for phase, harness, model, effort in selections:
+        if not harnesses.reasoning_effort_supported(harness, cwd=config.cwd):
+            continue
         warning = validate_selection(harness, model, effort, cwd=config.cwd)
         if warning:
             print(f"WARNING: {phase}: {warning}", file=sys.stderr)
@@ -160,6 +177,8 @@ def _validate_model_selections(config) -> None:
     ):
         routes = config.profile_v2.triage.routes
         for name, route in routes.items():
+            if not harnesses.reasoning_effort_supported(route.harness, cwd=config.cwd):
+                continue
             warning = validate_selection(
                 route.harness,
                 route.model or config.remediation_model or config.model,

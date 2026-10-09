@@ -40,6 +40,32 @@ class FakeProcess:
         self.signals.append(signum)
 
 
+def test_child_output_drain_survives_invalid_utf8(tmp_path):
+    controller = tui_run_controller.LiveRunController()
+    plan = tui_state.LaunchPlan(profile_name="demo", mode="run", argv=("revrem",), shell_command="revrem")
+    controller.start(
+        profile=profiles.Profile(name="demo"), plan=plan, cwd=tmp_path,
+        entrypoint_resolver=lambda argv: [sys.executable, "-c",
+            "import os; os.write(1, b'bad\\xff\\nafter\\n'); os.write(2, b'bad\\xff\\nafter\\n')"],
+    )
+    assert controller.process.wait(timeout=5) == 0
+    controller.refresh()
+    assert controller.stdout_lines() == ("bad\ufffd", "after")
+    assert controller.stderr_lines() == ("bad\ufffd", "after")
+
+
+def test_descendant_identity_handles_non_utf8_process_names(tmp_path, monkeypatch):
+    proc_stat = tmp_path / "stat"
+    proc_stat.write_bytes(b"123 (name\xff) " + b" ".join([b"S", *([b"0"] * 18), b"456"]))
+    original = Path.read_text
+
+    def read_text(path, *args, **kwargs):
+        return original(proc_stat if str(path) == "/proc/123/stat" else path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    assert tui_run_controller._descendant_identity(123) == tui_run_controller.DescendantIdentity(123, "456")
+
+
 def test_prepare_live_run_launch_uses_profile_artifact_dir_precedence(tmp_path):
     profile = profiles.Profile(
         name="demo",
@@ -277,7 +303,8 @@ def test_cancel_sends_sigint_to_process_group(monkeypatch):
     assert signals == [(999, tui_run_controller.signal.SIGINT)]
 
 
-def test_cancel_reports_forced_cleanup_after_escalation(monkeypatch):
+@pytest.mark.parametrize("still_alive", [False, True])
+def test_cancel_reports_forced_cleanup_after_escalation(monkeypatch, still_alive):
     class StubbornProcess(FakeProcess):
         def __init__(self):
             super().__init__(returncode=None)  # type: ignore[arg-type]
@@ -288,7 +315,7 @@ def test_cancel_reports_forced_cleanup_after_escalation(monkeypatch):
 
         def wait(self, timeout: float | None = None) -> int:
             self.wait_calls += 1
-            if self.wait_calls < 3:
+            if self.wait_calls < 3 or still_alive:
                 raise subprocess.TimeoutExpired(["fake"], timeout)
             self.returncode = -9
             return -9
@@ -303,8 +330,14 @@ def test_cancel_reports_forced_cleanup_after_escalation(monkeypatch):
     )
     controller = tui_run_controller.LiveRunController(process=process, status="running")
 
+    controller.stdout_tail = ("previous run",)
+    controller._stdout_buffer.append("current output")
+    controller._stderr_buffer.append("current error")
     status = controller.cancel(grace_seconds=0)
 
+    assert controller.stdout_tail == ("current output",)
+    assert controller.stderr_tail == ("current error",)
+    assert controller.exit_code == (None if still_alive else -9)
     assert status == "failed-forced-cleanup"
     assert signals == [
         (999, tui_run_controller.signal.SIGINT),

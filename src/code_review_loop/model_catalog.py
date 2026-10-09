@@ -198,8 +198,11 @@ def effort_choices(harness: str, model: str | None, *, cwd: Path | None = None) 
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
-    with path.open("rb") as handle:
-        return tomllib.load(handle)
+    try:
+        with path.open("rb") as handle:
+            return tomllib.load(handle)
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"catalog file {path} is not valid TOML: {exc}") from exc
 
 
 def _extract_codex_cache_reasoning_efforts(entry: dict[str, Any]) -> list[str] | None:

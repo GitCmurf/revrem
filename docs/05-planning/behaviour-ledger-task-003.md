@@ -3,7 +3,7 @@ document_id: REVREM-LEDGER-003
 type: LEDGER
 title: Behaviour ledger for the cli.py re-engineering (REVREM-TASK-003)
 status: Approved
-version: '1.15'
+version: '1.17'
 last_updated: '2026-10-09'
 owner: GitCmurf
 docops_version: '2.0'
@@ -55,6 +55,28 @@ There is no silent third option.
 ```
 
 ## Entries
+
+### 2026-10-09 — Reset checks when remediation retries (PR #52)
+
+- **Contract:** human, live TUI presentation.
+- **What changed:** an inner remediation retry resets the preceding failed check
+  result to pending. The next check starts running and reports its own outcome.
+- **Before / After:** `tui_run/inner-retry.svg` replaces the stale failed/done
+  check label with pending checks while remediation runs.
+- **Evidence:** run-state regressions cover running checks and successful retries.
+- **schema_version impact:** none; event and summary formats are unchanged.
+
+### 2026-10-09 — Preserve outcomes when optional telemetry is damaged (PR #52)
+
+- **Contract:** machine, correction within existing nullable summary fields.
+- **What changed:** unreadable event streams and sequence gaps produce empty
+  `model_invocations` and null `tokens`, while the outcome summary is still
+  written. Reused summaries discard stale token totals. Event-level phase and
+  iteration take precedence over identically named payload fields.
+- **Evidence:** summary-write regressions exercise missing, unreadable,
+  discontinuous and token-free streams, plus conflicting payload fields.
+- **schema_version impact:** none; field names and allowed types are unchanged.
+- **CHANGELOG:** Unreleased fixes.
 
 ### 2026-10-09 — Isolate the profile-picker snapshot (PR #52)
 

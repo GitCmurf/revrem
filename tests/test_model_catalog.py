@@ -8,6 +8,18 @@ from code_review_loop import harnesses, model_catalog
 from code_review_loop.cli.commands import models
 
 
+@pytest.mark.parametrize("harness", ["claude", "gemini", "opencode", "kilo"])
+def test_cli_skips_unsupported_effort_validation(tmp_path, capsys, harness):
+    from importlib import import_module
+
+    from code_review_loop.config import LoopConfig
+
+    config = LoopConfig(cwd=tmp_path, review_harness=harness, remediation_harness=harness,
+                        model="provider-model", reasoning_effort="high", triage_enabled=False)
+    import_module("code_review_loop.cli.main")._validate_model_selections(config)
+    assert "not in the local" not in capsys.readouterr().err
+
+
 def test_packaged_gpt_56_family_exposes_full_effort_matrix(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing-codex"))
     catalog = model_catalog.load_catalog(tmp_path, home=tmp_path)
@@ -382,3 +394,35 @@ def test_current_codex_example_resolves_bounded_models(tmp_path, monkeypatch):
     assert profile.triage.contract == "v2"
     assert profile.pipeline.max_iterations == 2
     assert profile.budgets.max_wall_seconds == 900
+
+
+def test_malformed_catalog_error_names_file(tmp_path):
+    path = tmp_path / ".revrem-catalog.toml"
+    path.write_text("[broken", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"catalog file .*revrem-catalog.toml is not valid TOML"):
+        model_catalog.load_catalog(tmp_path, home=tmp_path)
+
+
+@pytest.mark.parametrize("harness", ["claude", "gemini", "opencode", "kilo"])
+def test_cli_rejects_invalid_effort_before_saving_profile(tmp_path, monkeypatch, capsys, harness):
+    from importlib import import_module
+
+    monkeypatch.chdir(tmp_path)
+    code = import_module("code_review_loop.cli.main").main([
+        "--review-harness", harness, "--review-reasoning-effort", "bogus", "--save-profile", "invalid"
+    ])
+    assert code == 1
+    assert "reasoning effort 'bogus'" in capsys.readouterr().err
+    assert not (tmp_path / ".revrem.toml").exists()
+
+
+def test_cli_rejects_invalid_effort_for_disabled_phase(tmp_path, monkeypatch, capsys):
+    from importlib import import_module
+
+    monkeypatch.chdir(tmp_path)
+    code = import_module("code_review_loop.cli.main").main([
+        "--commit-reasoning-effort", "bogus", "--save-profile", "invalid"
+    ])
+    assert code == 1
+    assert "reasoning effort 'bogus'" in capsys.readouterr().err
+    assert not (tmp_path / ".revrem.toml").exists()

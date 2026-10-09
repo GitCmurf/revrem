@@ -284,12 +284,13 @@ def loop_diagram_class() -> type[Any] | None:
                 harness_dotted = fields.get("harness")
                 model_dotted = fields.get("model")
                 harness_value = (
-                    str(self.model.field_value(harness_dotted, "codex"))
+                    str(self.model.field_value(harness_dotted, _profile_dotted_value(self.model.profile, harness_dotted)))
                     if harness_dotted
                     else "codex"
                 )
                 model_value = (
-                    str(self.model.field_value(model_dotted, "")) if model_dotted else None
+                    self.model.field_value(model_dotted, _profile_dotted_value(self.model.profile, model_dotted))
+                    if model_dotted else None
                 )
                 choices = _effort_choices_for_phase(
                     self.current_phase(),

@@ -138,6 +138,30 @@ def test_check_phase_start_marks_checks_running(tmp_path: Path) -> None:
     assert details["checks"] == ""
 
 
+def test_second_check_is_running_after_first_check_passes(tmp_path: Path) -> None:
+    records = (
+        _ev(1, "phase_start", "check", "1.1"),
+        _ev(2, "check_result", "check", "1.1", status="passed"),
+        _ev(3, "phase_start", "check", "1.2"),
+    )
+    checks = next(p for p in tui_run_state.run_loop_view(records, _profile(tmp_path)).phases if p.name == "checks")
+    assert checks.state == "running"
+    assert checks.detail == ""
+
+
+def test_passing_inner_retry_replaces_previous_check_failure(tmp_path: Path) -> None:
+    records = (
+        _ev(1, "phase_start", "remediate", 1),
+        _ev(2, "check_result", "check", "1.1", status="failed"),
+        _ev(3, "phase_start", "remediate", 1),
+        _ev(4, "phase_start", "check", "1.1"),
+        _ev(5, "check_result", "check", "1.1", status="passed"),
+    )
+    checks = next(p for p in tui_run_state.run_loop_view(records, _profile(tmp_path)).phases if p.name == "checks")
+    assert checks.state == "done"
+    assert checks.detail == "passed"
+
+
 def test_failed_check_result_uses_status_field(tmp_path: Path) -> None:
     events = (
         _ev(1, "phase_start", "remediate", 2),
