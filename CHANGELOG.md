@@ -17,6 +17,9 @@ This project follows Semantic Versioning once public releases begin.
 
 ### Fixed
 
+- Empty-comparison confirmation checks untracked files across the repository
+  when invoked from a subdirectory, using root-relative artifact exclusions.
+- Installed-package acceptance checks remain active under Python optimization.
 - Codex no-changes claims now require Git confirmation of the committed,
   staged and working trees, with no non-artifact untracked files, before clearing
   otherwise unknown reviews. Provider output and confirmation evidence are retained.

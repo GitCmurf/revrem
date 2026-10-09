@@ -216,3 +216,19 @@ def test_empty_comparison_git_failure_stays_unknown(tmp_path, monkeypatch):
     monkeypatch.setattr(review, "run_git_preflight", lambda *a: CommandResult(["git"], 128))
     assert review.confirm_empty_comparison(
         LoopConfig(cwd=tmp_path), "There are no changes to review.") is None
+
+
+@pytest.mark.parametrize("untracked", ["outside.py", "nested/.revrem/code.py", ".revrem/runs/log.txt"])
+def test_empty_comparison_from_subdirectory_checks_repo_wide_untracked_files(tmp_path, untracked):
+    from code_review_loop.adapters.review import confirm_empty_comparison
+    from tests.support.git_fixtures import init_repo
+
+    repo = init_repo(tmp_path / "repo")
+    cwd = repo / "nested"
+    cwd.mkdir()
+    path = repo / untracked
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("untracked content\n", encoding="utf-8")
+    config = LoopConfig(cwd=cwd, base="main", artifact_dir=repo / ".revrem/runs")
+    result = confirm_empty_comparison(config, "There are no changes to review.")
+    assert (result is not None) == untracked.startswith(".revrem/")

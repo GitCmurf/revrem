@@ -44,7 +44,8 @@ def smoke(python: Path) -> None:
              "commit", "-m", "test: package smoke fixture"])
         cli = [str(python), "-I", "-m", "code_review_loop"]
         rows = json.loads(run([*cli, "models", "list", "--format", "json"]))
-        assert {"gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"} <= {row["id"] for row in rows}
+        if not {"gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"} <= {row["id"] for row in rows}:
+            raise RuntimeError("Installed catalog is missing current Codex models")
         run([*cli, "doctor", "--base", "main", "--codex-bin", "git", "--format", "json",
              "--artifact-dir", str(root / "doctor")])
         for scenario, code in (("clear", 0), ("findings", 2)):
@@ -56,10 +57,13 @@ def smoke(python: Path) -> None:
                  "--no-run-history", "--no-tty", "--artifact-dir", str(artifacts),
                  "--check", "git diff --check"], expected=code)
             summary = json.loads((artifacts / "summary.json").read_text())
-            assert summary["final_status"] == scenario
-            assert (artifacts / "events.jsonl").is_file()
+            if summary["final_status"] != scenario:
+                raise RuntimeError(f"Expected {scenario} final status, got {summary['final_status']}")
+            if not (artifacts / "events.jsonl").is_file():
+                raise RuntimeError(f"Missing events artifact for {scenario}")
             run([*cli, "report", str(artifacts), "--output", str(root / f"{scenario}.html")])
-            assert "<html" in (root / f"{scenario}.html").read_text().lower()
+            if "<html" not in (root / f"{scenario}.html").read_text().lower():
+                raise RuntimeError(f"Invalid HTML report for {scenario}")
         run([*cli, "--profile", "security", "--base", "main", "--dry-run", "--no-run-history",
              "--artifact-dir", str(root / "expert")])
     print("Installed-package acceptance passed: models, doctor, clear/findings loops, reports, expert profile.")

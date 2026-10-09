@@ -352,7 +352,11 @@ def confirm_empty_comparison(config: LoopConfig, output: str) -> dict[str, objec
             config.cwd, ["diff", "--quiet", "--no-ext-diff", "--ignore-submodules=none", *tree, "--"])
         if diff.returncode != 0:
             return None
-    untracked = run_git_preflight(config.cwd, ["ls-files", "--others", "--exclude-standard", "-z"])
+    # ls-files otherwise scopes to cwd and emits cwd-relative names, while
+    # artifact exclusions are repository-root-relative.
+    untracked = run_git_preflight(config.cwd, [
+        "ls-files", "--others", "--exclude-standard", "--full-name", "-z", "--", ":/",
+    ])
     if untracked.returncode != 0 or any(
         path and not is_artifact_path(config, path) for path in untracked.stdout.split("\0")
     ):

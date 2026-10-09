@@ -3,8 +3,8 @@ document_id: REVREM-PLAN-013
 type: PLAN
 title: System-wide deployment readiness
 status: Draft
-version: '0.1'
-last_updated: '2026-10-06'
+version: '0.2'
+last_updated: '2026-10-09'
 owner: GitCmurf
 area: planning
 docops_version: '2.0'
@@ -17,8 +17,8 @@ description: Current model verification, installed-package acceptance, promotion
 > **Document ID:** REVREM-PLAN-013
 > **Owner:** GitCmurf
 > **Status:** Draft
-> **Version:** 0.1
-> **Last Updated:** 2026-10-06
+> **Version:** 0.2
+> **Last Updated:** 2026-10-09
 > **Type:** PLAN
 > **Area:** planning
 > **Description:** Current model verification, installed-package acceptance, promotion and rollback evidence.
@@ -137,10 +137,37 @@ The final pytest hook passed all tests but pre-commit noticed documentation
 updates made while it ran. The non-test hooks were rerun after those updates;
 pytest was not repeated for documentation-only changes.
 
-The external CodeRabbit submission was rejected by automatic approval review
-because disclosure to that service was not explicitly authorised. An approval
-question is pending. Local review and verification were completed; no diff was
-sent to CodeRabbit.
+The operator explicitly authorised CodeRabbit review on 2026-10-09, resolving
+the earlier disclosure approval block. CodeRabbit CLI 0.9.0 reviewed the 23
+changed files in `1d0b91b..a177cc1` with `--committed --fresh --deep`. It exited
+successfully with one minor finding and no reported uncovered files. Its
+completion message was "Review completed with unverified findings". Local
+regressions reproduced the finding: Python optimization disabled four acceptance
+assertions. Those checks now raise explicit errors, including under `-O`.
+
+Local review also reproduced a false clear when running from a subdirectory:
+`git ls-files` omitted untracked files elsewhere and returned paths incompatible
+with root-relative artifact exclusions. Confirmation now scans the whole
+repository with root-relative names. Regressions cover outside files, a nested
+directory named `.revrem`, and legitimate root-level run artifacts.
+
+The fresh verification review covered all 24 changed files, including the new
+acceptance regression tests. It exited successfully with one major finding:
+remove `ultra` because the public API guide lists `max` as the highest effort.
+This finding was rejected after checking the exact runtime. Codex CLI 0.162.0's
+model metadata, fetched on 2026-10-09, advertises `ultra` for Astra, Sol 6.1 and
+Sol 6. Three bounded, read-only live calls through RevRem's Codex adapter at
+`ultra` each returned the required marker and exit 0. The catalog describes
+Codex settings, not the public API parameter contract. Both review passes
+reported no uncovered files; the verification pass raised no further issues
+with the acceptance checks or Git confirmation fix. No actionable external
+findings remain. Raw review output stays outside Git.
+
+The 2026-10-09 development gate passed: 2,015 tests passed and 10 opt-in provider
+cases were skipped in 217.80 seconds. Ruff, mypy (117 source files), all 10
+import contracts, DocOps doctor and all 46 governed documents passed. The
+existing PLAN-005 filename warning remains. The three `ultra` probes ran
+separately from the default suite and passed.
 
 The first three-model loop detected and fixed an injected `a - b` regression,
 and its arithmetic checks passed. Its overall run did not clear: v1 triage first
@@ -197,4 +224,5 @@ source checkout or fake harness.
 
 | Version | Date     | Author    | Changes       |
 | ------- | -------- | --------- | ------------- |
+| 0.2     | 2026-10-09 | GitCmurf | Authorised external review; fixed optimized acceptance and subdirectory confirmation |
 | 0.1     | 2026-10-06 | GitCmurf | Initial draft |
