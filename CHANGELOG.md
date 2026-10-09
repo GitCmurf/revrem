@@ -6,7 +6,7 @@ This project follows Semantic Versioning once public releases begin.
 
 ## [Unreleased]
 
-## [0.6.0rc1] - 2026-10-09
+## [0.6.0] - 2026-10-09
 
 ### Added
 
